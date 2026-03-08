@@ -1,0 +1,14 @@
+{
+  "identities": [
+    {
+      "name": "bazalt",
+      "credentials": [
+        {
+          "accessKey": "bazalt",
+          "secretKey": "bazalt_secret"
+        }
+      ],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}
