@@ -1,10 +1,15 @@
-import React, { useEffect, useRef, useCallback } from 'react'
+import React, { useEffect, useRef, useCallback, useImperativeHandle, forwardRef } from 'react'
 import { EditorState } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
 import { wikilinksExtension, wikilinksTheme } from './extensions/wikilinks.js'
+
+export interface EditorRef {
+  /** Insert text at the current cursor position */
+  insertText: (text: string) => void
+}
 
 export interface EditorProps {
   /** Initial content */
@@ -18,11 +23,27 @@ export interface EditorProps {
   className?: string
 }
 
-export function Editor({ content, onChange, onWikiLinkClick, readOnly = false, className }: EditorProps) {
+export const Editor = forwardRef<EditorRef, EditorProps>(function Editor(
+  { content, onChange, onWikiLinkClick, readOnly = false, className }: EditorProps,
+  ref,
+) {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const onChangeRef = useRef(onChange)
   const onWikiLinkClickRef = useRef(onWikiLinkClick)
+
+  useImperativeHandle(ref, () => ({
+    insertText(text: string) {
+      const view = viewRef.current
+      if (!view) return
+      const { from, to } = view.state.selection.main
+      view.dispatch({
+        changes: { from, to, insert: text },
+        selection: { anchor: from + text.length },
+      })
+      view.focus()
+    },
+  }))
 
   useEffect(() => { onChangeRef.current = onChange }, [onChange])
   useEffect(() => { onWikiLinkClickRef.current = onWikiLinkClick }, [onWikiLinkClick])
@@ -82,4 +103,4 @@ export function Editor({ content, onChange, onWikiLinkClick, readOnly = false, c
   }, [content])
 
   return <div ref={containerRef} className={className} style={{ height: '100%' }} />
-}
+})

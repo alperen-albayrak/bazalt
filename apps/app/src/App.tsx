@@ -17,7 +17,7 @@ type RightPanel = 'backlinks' | 'sync' | 'account' | null
 
 export function App() {
   const { authState, logout } = useAuth()
-  const { state, openVault, readFile, writeFile, createNote, refreshVault } = useVault()
+  const { state, openVault, openServerVault, readFile, writeFile, writeBinaryFile, readFileAsBlob, createNote, refreshVault } = useVault()
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [fileContent, setFileContent] = useState<string>('')
   const [linkGraph, setLinkGraph] = useState<LinkGraph | null>(null)
@@ -62,7 +62,8 @@ export function App() {
       .then(setFileContent)
       .catch((e) => console.error('readFile error', e))
       .finally(() => { loadingRef.current = false })
-  }, [selectedPath, state, readFile])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPath, state.status])
 
   const handleSelectFile = useCallback((file: VaultFile) => {
     if (file.type === 'markdown' || file.type === 'excalidraw') {
@@ -108,6 +109,13 @@ export function App() {
     [writeFile, state, readFile],
   )
 
+  const resolveAttachment = useCallback(
+    async (path: string) => {
+      try { return await readFileAsBlob(path) } catch { return '' }
+    },
+    [readFileAsBlob],
+  )
+
   const backlinks =
     linkGraph && selectedPath ? getBacklinks(linkGraph, selectedPath) : []
 
@@ -118,6 +126,7 @@ export function App() {
     return (
       <VaultPicker
         onOpenVault={openVault}
+        onOpenServerVault={openServerVault}
         onSaveSettings={saveSettings}
         authState={authState}
         logout={logout}
@@ -225,6 +234,9 @@ export function App() {
               content={fileContent}
               onSave={handleSave}
               onWikiLinkClick={handleWikiLinkClick}
+              writeBinaryFile={writeBinaryFile}
+              resolveAttachment={resolveAttachment}
+              refreshVault={refreshVault}
             />
           ) : (
             <div className="flex items-center justify-center h-full text-gray-400 text-sm">

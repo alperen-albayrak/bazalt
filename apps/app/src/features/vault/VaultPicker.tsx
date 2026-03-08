@@ -11,6 +11,7 @@ interface Vault {
 
 interface VaultPickerProps {
   onOpenVault: () => Promise<void>
+  onOpenServerVault: (serverUrl: string, token: string, vaultId: string, vaultName: string) => Promise<void>
   onSaveSettings: (s: SyncSettings) => void
   authState: AuthState
   logout: () => void
@@ -27,7 +28,7 @@ const ROLE_BADGE: Record<string, string> = {
   VIEWER: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
 }
 
-export function VaultPicker({ onOpenVault, onSaveSettings, authState, logout }: VaultPickerProps) {
+export function VaultPicker({ onOpenVault, onOpenServerVault, onSaveSettings, authState, logout }: VaultPickerProps) {
   const [vaults, setVaults] = useState<Vault[]>([])
   const [loadingVaults, setLoadingVaults] = useState(true)
   const [vaultsError, setVaultsError] = useState('')
@@ -39,8 +40,93 @@ export function VaultPicker({ onOpenVault, onSaveSettings, authState, logout }: 
   const [openingVaultId, setOpeningVaultId] = useState<string | null>(null)
 
   const [showAccount, setShowAccount] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null)
+  const [uploadError, setUploadError] = useState('')
 
   const authHeader = { Authorization: `Bearer ${authState.token}` }
+
+  const TEXT_EXTENSIONS = new Set([
+    '.md', '.txt', '.json', '.yaml', '.yml', '.toml', '.css', '.js', '.ts', '.html', '.xml', '.csv',
+  ])
+  function isTextFile(name: string): boolean {
+    const dot = name.lastIndexOf('.')
+    if (dot < 0) return false
+    return TEXT_EXTENSIONS.has(name.slice(dot).toLowerCase())
+  }
+
+  async function collectTextFiles(
+    handle: FileSystemDirectoryHandle,
+    prefix: string,
+  ): Promise<{ path: string; content: string }[]> {
+    const result: { path: string; content: string }[] = []
+    for await (const [name, entry] of handle as unknown as AsyncIterable<[string, FileSystemHandle]>) {
+      if (name.startsWith('.')) continue
+      const path = prefix ? `${prefix}/${name}` : name
+      if (entry.kind === 'file' && isTextFile(name)) {
+        const file = await (entry as FileSystemFileHandle).getFile()
+        const content = await file.text()
+        result.push({ path, content })
+      } else if (entry.kind === 'directory') {
+        const sub = await handle.getDirectoryHandle(name)
+        result.push(...(await collectTextFiles(sub, path)))
+      }
+    }
+    return result
+  }
+
+  async function handleUploadFolder() {
+    if (!('showDirectoryPicker' in window)) {
+      setUploadError('File System Access API not supported in this browser.')
+      return
+    }
+    setUploadError('')
+    try {
+      const dirHandle = await (window as any).showDirectoryPicker({ mode: 'read' })
+      const folderName = dirHandle.name
+
+      setUploadProgress({ current: 0, total: 0 })
+      const allFiles = await collectTextFiles(dirHandle, '')
+      setUploadProgress({ current: 0, total: allFiles.length })
+
+      // Create vault on server
+      const res = await fetch(`${API_BASE}/api/vaults`, {
+        method: 'POST',
+        headers: { ...authHeader, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: folderName }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error((data as any).error || `Failed to create vault (${res.status})`)
+      }
+      const vault: Vault = await res.json()
+      onSaveSettings({ serverUrl: API_BASE, token: authState.token, vaultId: vault.id })
+
+      // Push files in batches of 50
+      const BATCH = 50
+      let pushed = 0
+      for (let i = 0; i < allFiles.length; i += BATCH) {
+        const batch = allFiles.slice(i, i + BATCH)
+        const pushRes = await fetch(`${API_BASE}/api/vaults/${vault.id}/sync/push`, {
+          method: 'POST',
+          headers: { ...authHeader, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ files: batch }),
+        })
+        if (!pushRes.ok) {
+          const data = await pushRes.json().catch(() => ({}))
+          throw new Error((data as any).error || `Push failed (${pushRes.status})`)
+        }
+        pushed += batch.length
+        setUploadProgress({ current: pushed, total: allFiles.length })
+      }
+
+      setUploadProgress(null)
+      setVaults((prev) => [...prev, vault])
+      await onOpenVault()
+    } catch (e: any) {
+      if (e.name !== 'AbortError') setUploadError(e.message)
+      setUploadProgress(null)
+    }
+  }
 
   useEffect(() => {
     setLoadingVaults(true)
@@ -57,12 +143,8 @@ export function VaultPicker({ onOpenVault, onSaveSettings, authState, logout }: 
   async function handleOpenVault(vault: Vault) {
     setOpeningVaultId(vault.id)
     try {
-      onSaveSettings({
-        serverUrl: API_BASE,
-        token: authState.token,
-        vaultId: vault.id,
-      })
-      await onOpenVault()
+      onSaveSettings({ serverUrl: API_BASE, token: authState.token, vaultId: vault.id })
+      await onOpenServerVault(API_BASE, authState.token, vault.id, vault.name)
     } finally {
       setOpeningVaultId(null)
     }
@@ -181,6 +263,34 @@ export function VaultPicker({ onOpenVault, onSaveSettings, authState, logout }: 
               </button>
             </form>
             {createError && <p className="mt-2 text-xs text-red-500">{createError}</p>}
+          </section>
+
+          {/* Upload existing folder */}
+          <section className="border-t border-gray-200 dark:border-gray-700 pt-6">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Upload existing folder</h2>
+            <button
+              onClick={handleUploadFolder}
+              disabled={uploadProgress !== null || creating || openingVaultId !== null}
+              className={btnPrimary}
+            >
+              {uploadProgress
+                ? `Uploading ${uploadProgress.current} / ${uploadProgress.total} files…`
+                : 'Upload folder as new vault'}
+            </button>
+            <p className="mt-1 text-xs text-gray-400">Uploads all markdown and text files to the server.</p>
+            {uploadError && <p className="mt-2 text-xs text-red-500">{uploadError}</p>}
+            {uploadProgress && (
+              <div className="mt-2 h-1.5 w-full bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-accent transition-all"
+                  style={{
+                    width: uploadProgress.total > 0
+                      ? `${Math.round((uploadProgress.current / uploadProgress.total) * 100)}%`
+                      : '0%',
+                  }}
+                />
+              </div>
+            )}
           </section>
 
           {/* Open local folder */}
