@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bz-link-color: #7c3aed;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+/* Markdown rendered output */
+.bz-markdown {
+  line-height: 1.7;
+}
+
+.bz-markdown h1 { @apply text-2xl font-bold mt-6 mb-3; }
+.bz-markdown h2 { @apply text-xl font-bold mt-5 mb-2; }
+.bz-markdown h3 { @apply text-lg font-semibold mt-4 mb-2; }
+.bz-markdown p  { @apply mb-3; }
+.bz-markdown ul { @apply list-disc pl-6 mb-3; }
+.bz-markdown ol { @apply list-decimal pl-6 mb-3; }
+.bz-markdown li { @apply mb-1; }
+.bz-markdown blockquote { @apply border-l-4 border-accent pl-4 italic text-gray-500 dark:text-gray-400 my-3; }
+.bz-markdown code { @apply font-mono text-sm bg-gray-100 dark:bg-gray-800 px-1 rounded; }
+.bz-markdown pre  { @apply bg-gray-100 dark:bg-gray-800 rounded p-3 overflow-x-auto mb-3; }
+.bz-markdown pre code { @apply bg-transparent p-0; }
+.bz-markdown a { @apply text-accent underline; }
+.bz-markdown hr { @apply border-gray-200 dark:border-gray-700 my-6; }
+
+/* Wikilinks in rendered view */
+.bz-wikilink-render {
+  color: var(--bz-link-color);
+  cursor: pointer;
+  border-bottom: 1px solid var(--bz-link-color);
+}
+.bz-wikilink-render:hover {
+  opacity: 0.8;
+}
+.bz-wikilink-render.unresolved {
+  color: #ef4444;
+  border-bottom-color: #ef4444;
+}
