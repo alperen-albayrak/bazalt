@@ -1,0 +1,51 @@
+{
+  "name": "@bazalt/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main.js",
+  "scripts": {
+    "build:electron": "tsc -p tsconfig.json",
+    "build:renderer": "pnpm --filter @bazalt/app build",
+    "build": "pnpm build:renderer && pnpm build:electron",
+    "dev": "concurrently \"pnpm --filter @bazalt/app dev\" \"tsc -p tsconfig.json --watch\" \"wait-on http://localhost:5173 && electron .\"",
+    "pack": "pnpm build && electron-builder",
+    "dist:mac": "pnpm build && electron-builder --mac",
+    "dist:win": "pnpm build && electron-builder --win",
+    "dist:linux": "pnpm build && electron-builder --linux"
+  },
+  "dependencies": {
+    "chokidar": "^3.6.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0",
+    "electron": "^32.0.0",
+    "electron-builder": "^25.0.0",
+    "typescript": "^5.6.0",
+    "wait-on": "^8.0.0"
+  },
+  "build": {
+    "appId": "com.bazalt.app",
+    "productName": "Bazalt",
+    "files": [
+      "dist/**"
+    ],
+    "extraResources": [
+      {
+        "from": "../app/dist",
+        "to": "renderer",
+        "filter": ["**/*"]
+      }
+    ],
+    "mac": {
+      "target": [{ "target": "dmg", "arch": ["x64", "arm64"] }],
+      "category": "public.app-category.productivity"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "category": "Office"
+    }
+  }
+}
