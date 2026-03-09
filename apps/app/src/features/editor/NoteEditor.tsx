@@ -150,17 +150,23 @@ export function NoteEditor({
   return (
     <div className="flex flex-col h-full">
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shrink-0">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shrink-0 gap-3">
         <h1 className="text-base font-semibold text-gray-800 dark:text-gray-100 truncate">{title}</h1>
         <div className="flex items-center gap-2">
-          <span className={`text-xs ${saved ? 'text-gray-400' : 'text-amber-500'}`}>
-            {saved ? 'Saved' : 'Unsaved'}
-          </span>
+          {saved ? (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 font-medium">
+              Saved
+            </span>
+          ) : (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 font-medium">
+              Unsaved
+            </span>
+          )}
           {writeBinaryFile && (
             <>
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="px-2 py-1 text-xs hover:bg-gray-100 dark:hover:bg-gray-800 rounded text-gray-600 dark:text-gray-400"
+                className="px-2 py-1 text-xs hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md text-gray-500 dark:text-gray-400 hover:text-accent transition-colors"
                 title="Attach file"
               >
                 📎
@@ -174,7 +180,7 @@ export function NoteEditor({
               />
             </>
           )}
-          <div className="flex rounded border border-gray-200 dark:border-gray-700 overflow-hidden text-xs">
+          <div className="flex rounded-lg border border-gray-200 dark:border-gray-600 overflow-hidden text-xs bg-gray-50 dark:bg-gray-800">
             {(['edit', 'split', 'preview'] as ViewMode[]).map((m) => (
               <button
                 key={m}
@@ -183,7 +189,7 @@ export function NoteEditor({
                   'px-2 py-1 capitalize',
                   mode === m
                     ? 'bg-accent text-white'
-                    : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400',
+                    : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400',
                 ].join(' ')}
               >
                 {m}
@@ -195,7 +201,7 @@ export function NoteEditor({
 
       {/* Content */}
       <div
-        className={`flex flex-1 min-h-0 ${dragOver ? 'ring-2 ring-inset ring-accent' : ''}`}
+        className={`flex flex-1 min-h-0 ${dragOver ? 'ring-2 ring-inset ring-accent ring-opacity-60' : ''}`}
         onPaste={handlePaste}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { Capacitor } from '@capacitor/core'
 import { buildLinkGraph, resolveLink, getBacklinks, type VaultFile, type LinkGraph } from '@bazalt/core'
 import { useVault } from './features/vault/useVault.js'
 import { VaultPicker } from './features/vault/VaultPicker.js'
@@ -23,6 +24,7 @@ export function App() {
   const { authState, logout } = useAuth()
   const { state, openVault, openServerVault, openElectronVault, closeVault, readFile, writeFile, writeBinaryFile, readFileAsBlob, createNote, refreshVault } = useVault()
   const isElectron = !!window.electronAPI
+  const isNative = Capacitor.isNativePlatform()
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [fileContent, setFileContent] = useState<string>('')
   const [linkGraph, setLinkGraph] = useState<LinkGraph | null>(null)
@@ -126,12 +128,12 @@ export function App() {
 
   // ── Vault picker splash ───────────────────────────────────────────────────
   if (state.status === 'idle') {
-    // Electron: multi-account picker, no login wall
-    if (isElectron) {
+    // Electron / mobile: multi-account picker, no login wall
+    if (isElectron || isNative) {
       return (
         <MultiAccountVaultPicker
           onOpenServerVault={openServerVault}
-          onOpenLocalVault={openElectronVault}
+          onOpenLocalVault={isElectron ? openElectronVault : undefined}
         />
       )
     }
@@ -148,7 +150,7 @@ export function App() {
     )
   }
 
-  if (!authState && !isElectron) return <LoginPage />
+  if (!authState && !isElectron && !isNative) return <LoginPage />
 
   if (state.status === 'loading') {
     return (

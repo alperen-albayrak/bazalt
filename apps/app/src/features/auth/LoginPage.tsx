@@ -5,7 +5,7 @@ type Tab = 'login' | 'register'
 type Step = 'form' | 'totp'
 
 const inputCls =
-  'w-full text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 outline-none focus:border-accent'
+  'w-full text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-900 outline-none focus:border-accent focus:ring-2 focus:ring-accent/20'
 const btnCls =
   'w-full px-4 py-2 bg-accent hover:bg-accent-hover text-white font-semibold rounded-lg transition-colors disabled:opacity-50'
 
@@ -89,24 +89,24 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex items-center justify-center h-full bg-gray-50 dark:bg-gray-950">
-      <div className="w-full max-w-sm bg-white dark:bg-gray-900 rounded-2xl shadow-lg p-8 space-y-6">
+    <div className="flex items-center justify-center h-full bg-gradient-to-br from-slate-100 to-indigo-50 dark:from-gray-950 dark:to-gray-950">
+      <div className="w-full max-w-sm bg-white dark:bg-gray-900 rounded-2xl shadow-xl shadow-indigo-100/50 dark:shadow-none p-8 space-y-6">
         <div className="text-center">
-          <div className="text-4xl mb-2">🪨</div>
+          <img src="/icon.svg" className="w-16 h-16 mx-auto mb-2" alt="Bazalt" />
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Bazalt</h1>
           <p className="text-sm text-gray-400 mt-1">Open-source Obsidian alternative</p>
         </div>
 
         {step === 'form' && (
           <>
-            <div className="flex border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+            <div className="p-0.5 bg-gray-100 dark:bg-gray-800 rounded-xl flex">
               {(['login', 'register'] as Tab[]).map((t) => (
                 <button
                   key={t}
-                  className={`flex-1 py-2 text-sm font-medium capitalize transition-colors ${
+                  className={`flex-1 py-2 text-sm font-medium capitalize transition-colors rounded-lg ${
                     tab === t
-                      ? 'bg-accent text-white'
-                      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
+                      ? 'bg-accent text-white shadow-sm'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
                   }`}
                   onClick={() => { setTab(t); setError('') }}
                 >

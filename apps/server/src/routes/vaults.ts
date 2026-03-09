@@ -2,10 +2,24 @@ import type { FastifyInstance } from 'fastify'
 import { eq, and } from 'drizzle-orm'
 import { db } from '../lib/db.js'
 import { vaults, vaultMembers, vaultFiles } from '../lib/schema.js'
-import { putObject, getObject, storageKey } from '../lib/storage.js'
+import { putObject, getObject, getObjectBuffer, storageKey } from '../lib/storage.js'
 import { createHash } from 'crypto'
 
+function mimeType(path: string): string {
+  const ext = path.split('.').pop()?.toLowerCase() ?? ''
+  const map: Record<string, string> = {
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+    gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
+    pdf: 'application/pdf', mp3: 'audio/mpeg', wav: 'audio/wav',
+    mp4: 'video/mp4', webm: 'video/webm',
+  }
+  return map[ext] ?? 'application/octet-stream'
+}
+
 export async function vaultRoutes(app: FastifyInstance) {
+  app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer' }, (_req, body, done) => {
+    done(null, body)
+  })
   /** List all vaults the current user is a member of */
   app.get('/api/vaults', async (request) => {
     const memberships = await db.query.vaultMembers.findMany({
@@ -53,6 +67,12 @@ export async function vaultRoutes(app: FastifyInstance) {
       })
       if (!record) return reply.status(404).send({ error: 'File not found' })
 
+      const isBinary = !record.path.endsWith('.md') && !record.path.endsWith('.txt')
+      if (isBinary) {
+        const buf = await getObjectBuffer(record.storageKey)
+        reply.header('Content-Type', mimeType(record.path))
+        return reply.send(buf)
+      }
       const content = await getObject(record.storageKey)
       reply.header('Content-Type', 'text/plain; charset=utf-8')
       return content
@@ -75,6 +95,35 @@ export async function vaultRoutes(app: FastifyInstance) {
     const key = storageKey(request.params.vaultId, path)
 
     await putObject(key, content)
+    const [record] = await db
+      .insert(vaultFiles)
+      .values({ vaultId: request.params.vaultId, path, hash, size, storageKey: key })
+      .onConflictDoUpdate({
+        target: [vaultFiles.vaultId, vaultFiles.path],
+        set: { hash, size, storageKey: key, updatedAt: new Date() },
+      })
+      .returning()
+    return record
+  })
+
+  /** Put a binary file (images, attachments) */
+  app.put<{
+    Params: { vaultId: string }
+    Querystring: { path: string }
+    Body: Buffer
+  }>('/api/vaults/:vaultId/file/binary', async (request, reply) => {
+    const member = await assertMember(request.userId, request.params.vaultId)
+    if (member.role === 'VIEWER') return reply.status(403).send({ error: 'Read-only access' })
+
+    const { path } = request.query
+    const body = request.body
+    if (!path || !body) return reply.status(400).send({ error: 'path and body required' })
+
+    const hash = createHash('sha256').update(body).digest('hex')
+    const size = body.byteLength
+    const key = storageKey(request.params.vaultId, path)
+
+    await putObject(key, body)
     const [record] = await db
       .insert(vaultFiles)
       .values({ vaultId: request.params.vaultId, path, hash, size, storageKey: key })

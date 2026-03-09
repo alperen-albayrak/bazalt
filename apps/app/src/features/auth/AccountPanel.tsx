@@ -4,11 +4,11 @@ import { useAuth, API_BASE } from './useAuth.js'
 type Section = 'main' | 'setup-qr' | 'setup-verify' | 'show-backup' | 'disable' | 'regen'
 
 const inputCls =
-  'w-full text-xs border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 bg-white dark:bg-gray-900 outline-none focus:border-accent'
+  'w-full text-xs border border-gray-300 dark:border-gray-700 rounded-md px-2 py-1.5 bg-white dark:bg-gray-900 outline-none focus:border-accent'
 const btnCls =
-  'w-full px-2 py-1.5 text-xs bg-accent text-white rounded hover:bg-accent-hover disabled:opacity-50'
+  'w-full px-2 py-1.5 text-xs bg-accent text-white rounded-md hover:bg-accent-hover disabled:opacity-50'
 const dangerCls =
-  'w-full px-2 py-1.5 text-xs border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 rounded hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50'
+  'w-full px-2 py-1.5 text-xs border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50'
 
 export function AccountPanel() {
   const { authState, logout, setToken } = useAuth()
@@ -100,6 +100,8 @@ export function AccountPanel() {
     setSection('show-backup')
   }
 
+  const initials = (authState.user.name || authState.user.email).slice(0, 2).toUpperCase()
+
   return (
     <div className="flex flex-col h-full text-sm">
       <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-700 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase tracking-wide">
@@ -110,11 +112,16 @@ export function AccountPanel() {
         {section === 'main' && (
           <>
             {/* User info */}
-            <div className="space-y-0.5">
-              <p className="font-medium text-gray-800 dark:text-gray-200 truncate">{authState.user.name || authState.user.email}</p>
-              {authState.user.name && (
-                <p className="text-xs text-gray-400 truncate">{authState.user.email}</p>
-              )}
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-full bg-accent/10 text-accent flex items-center justify-center text-xs font-bold shrink-0">
+                {initials}
+              </div>
+              <div className="min-w-0">
+                <p className="font-medium text-gray-800 dark:text-gray-200 truncate">{authState.user.name || authState.user.email}</p>
+                {authState.user.name && (
+                  <p className="text-xs text-gray-400 truncate">{authState.user.email}</p>
+                )}
+              </div>
             </div>
 
             {/* 2FA section */}
@@ -149,7 +156,7 @@ export function AccountPanel() {
 
             <button
               onClick={logout}
-              className="w-full px-2 py-1.5 text-xs border border-gray-300 dark:border-gray-700 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400"
+              className="w-full px-2 py-1.5 text-xs border border-gray-300 dark:border-gray-700 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400"
             >
               Logout
             </button>
@@ -201,7 +208,7 @@ export function AccountPanel() {
             <p className="text-xs font-medium text-gray-800 dark:text-gray-200">
               2FA enabled! Save these backup codes — they won't be shown again.
             </p>
-            <div className="bg-gray-50 dark:bg-gray-800 rounded p-2 space-y-0.5">
+            <div className="bg-gray-50 dark:bg-gray-800/60 border border-gray-100 dark:border-gray-700 rounded-md p-2 space-y-0.5">
               {backupCodes.map((c, i) => (
                 <p key={i} className="font-mono text-xs select-all text-gray-700 dark:text-gray-300">
                   {c}

@@ -16,7 +16,7 @@ export function BacklinksPanel({ currentPath, backlinks, onNavigate }: Backlinks
         Backlinks
       </div>
       {backlinks.length === 0 ? (
-        <p className="px-3 py-4 text-gray-400 text-xs">No notes link to "{title}"</p>
+        <p className="px-4 py-6 text-center text-gray-400 dark:text-gray-500 text-xs">No notes link here yet.</p>
       ) : (
         <div className="overflow-y-auto flex-1">
           {backlinks.map((bl, i) => {
@@ -25,10 +25,10 @@ export function BacklinksPanel({ currentPath, backlinks, onNavigate }: Backlinks
               <button
                 key={i}
                 onClick={() => onNavigate(bl.sourcePath)}
-                className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 border-b border-gray-100 dark:border-gray-800 last:border-0"
+                className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/60 border-b border-gray-100 dark:border-gray-800 last:border-0 transition-colors"
               >
                 <div className="font-medium text-accent truncate">{sourceName}</div>
-                <div className="text-gray-400 text-xs truncate mt-0.5">[[{bl.rawLink}]]</div>
+                <div className="text-gray-400 dark:text-gray-500 text-xs font-mono truncate mt-0.5">[[{bl.rawLink}]]</div>
               </button>
             )
           })}

@@ -12,7 +12,7 @@ type VaultLoadState = VaultInfo[] | 'loading' | 'error'
 
 interface Props {
   onOpenServerVault: (serverUrl: string, token: string, vaultId: string, vaultName: string) => Promise<void>
-  onOpenLocalVault: () => Promise<void>
+  onOpenLocalVault?: () => Promise<void>
 }
 
 const ROLE_BADGE: Record<string, string> = {
@@ -240,21 +240,27 @@ export function MultiAccountVaultPicker({ onOpenServerVault, onOpenLocalVault }:
           </div>
         )}
 
-        {/* Empty state — two clear choices */}
+        {/* Empty state */}
         {accounts.length === 0 && !showAdd && (
           <div className="flex flex-col items-center justify-center h-full py-24 gap-3 px-6">
             <img src="/icon.svg" className="w-12 h-12 mb-2 opacity-80" alt="" />
             <h2 className="text-base font-semibold text-gray-900 dark:text-white">Open a vault</h2>
-            <p className="text-sm text-gray-400 text-center mb-2">Connect to a Bazalt server or open a local folder.</p>
+            <p className="text-sm text-gray-400 text-center mb-2">
+              {onOpenLocalVault
+                ? 'Connect to a Bazalt server or open a local folder.'
+                : 'Connect to a Bazalt server to get started.'}
+            </p>
             <button onClick={() => setShowAdd(true)} className={btnPrimary + ' w-full max-w-xs'}>
               Connect to server
             </button>
-            <button
-              onClick={onOpenLocalVault}
-              className={btnSecondary + ' w-full max-w-xs'}
-            >
-              Open local folder
-            </button>
+            {onOpenLocalVault && (
+              <button
+                onClick={onOpenLocalVault}
+                className={btnSecondary + ' w-full max-w-xs'}
+              >
+                Open local folder
+              </button>
+            )}
           </div>
         )}
 
@@ -319,8 +325,8 @@ export function MultiAccountVaultPicker({ onOpenServerVault, onOpenLocalVault }:
           )
         })}
 
-        {/* Open local folder — always visible when accounts exist */}
-        {accounts.length > 0 && !showAdd && (
+        {/* Open local folder — only on platforms that support it */}
+        {onOpenLocalVault && accounts.length > 0 && !showAdd && (
           <div className="px-5 py-4">
             <button
               onClick={onOpenLocalVault}

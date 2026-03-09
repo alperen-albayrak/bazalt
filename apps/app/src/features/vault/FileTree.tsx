@@ -28,7 +28,7 @@ export function FileTree({ tree, selectedPath, onSelect, onNewNote }: FileTreePr
         <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Notes</span>
         <button
           onClick={() => { setCreating(true); setNewName('') }}
-          className="text-gray-400 hover:text-accent transition-colors"
+          className="w-5 h-5 flex items-center justify-center rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-accent font-bold leading-none transition-colors"
           title="New note"
         >
           +
@@ -40,7 +40,7 @@ export function FileTree({ tree, selectedPath, onSelect, onNewNote }: FileTreePr
         <div className="px-2 py-1 border-b border-gray-200 dark:border-gray-700 shrink-0">
           <input
             autoFocus
-            className="w-full text-sm border border-accent rounded px-2 py-0.5 bg-white dark:bg-gray-900 outline-none"
+            className="w-full text-sm border border-accent rounded-md px-2 py-0.5 bg-white dark:bg-gray-900 outline-none"
             placeholder="Note name…"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
@@ -76,12 +76,14 @@ function FolderNode({ folder, depth, selectedPath, onSelect }: FolderNodeProps) 
     <div>
       {!isRoot && (
         <button
-          className="flex items-center gap-1 w-full text-left px-2 py-0.5 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400"
+          className="flex items-center gap-1 w-full text-left px-2 py-[5px] hover:bg-gray-100 dark:hover:bg-gray-800/60 text-gray-700 dark:text-gray-300 transition-colors"
           style={{ paddingLeft: `${depth * 12 + 8}px` }}
           onClick={() => setOpen((v) => !v)}
         >
-          <span className="text-xs">{open ? '▾' : '▸'}</span>
-          <span className="font-medium truncate">{folder.name}</span>
+          <span className="text-xs text-gray-400">{open ? '▾' : '▸'}</span>
+          <span className={depth === 1 ? 'text-xs font-semibold uppercase tracking-wide truncate' : 'font-medium truncate'}>
+            {folder.name}
+          </span>
         </button>
       )}
       {(isRoot || open) && (
@@ -119,30 +121,20 @@ interface FileNodeProps {
 }
 
 function FileNode({ file, depth, selected, onSelect }: FileNodeProps) {
-  const icon = fileIcon(file)
   return (
     <button
       className={[
-        'flex items-center gap-1.5 w-full text-left py-0.5 text-gray-800 dark:text-gray-200 truncate',
-        'hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors',
-        selected ? 'bg-accent/10 text-accent font-medium' : '',
+        'flex items-center w-full text-left py-[5px] pr-2 text-gray-800 dark:text-gray-200 truncate transition-colors',
+        selected
+          ? 'bg-accent/10 dark:bg-accent/15 text-accent font-medium border-l-2 border-accent'
+          : 'hover:bg-gray-100 dark:hover:bg-gray-800/60 border-l-2 border-transparent',
       ].join(' ')}
-      style={{ paddingLeft: `${depth * 12 + 8}px` }}
+      style={{ paddingLeft: `${depth * 12 + 6}px` }}
       onClick={() => onSelect(file)}
     >
-      <span className="shrink-0">{icon}</span>
       <span className="truncate">{displayName(file)}</span>
     </button>
   )
-}
-
-function fileIcon(file: VaultFile): string {
-  switch (file.type) {
-    case 'excalidraw': return '✏️'
-    case 'canvas': return '🗂️'
-    case 'markdown': return '📄'
-    default: return '📎'
-  }
 }
 
 function displayName(file: VaultFile): string {

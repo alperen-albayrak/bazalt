@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Outer gem silhouette clip / background -->
+  <polygon points="32,2 58,20 52,54 32,62 12,54 6,20" fill="#111316"/>
+
+  <!-- Rear lower-right face (darkest gray) -->
+  <polygon points="32,62 52,54 44,36" fill="#1e2125"/>
+
+  <!-- Lower-left face (dark slate) -->
+  <polygon points="32,62 12,54 20,36" fill="#2b3038"/>
+
+  <!-- Left side face -->
+  <polygon points="6,20 12,54 20,36 18,18" fill="#3a4049"/>
+
+  <!-- Right side face -->
+  <polygon points="58,20 52,54 44,36 46,18" fill="#3a4049"/>
+
+  <!-- Center body -->
+  <polygon points="18,18 20,36 32,42 44,36 46,18 32,14" fill="#4e5663"/>
+
+  <!-- Upper-left face -->
+  <polygon points="6,20 18,18 32,14 22,8" fill="#667080"/>
+
+  <!-- Upper-right face -->
+  <polygon points="58,20 46,18 32,14 42,8" fill="#4e5663"/>
+
+  <!-- Top highlight facet -->
+  <polygon points="22,8 32,14 42,8 32,2" fill="#8294a8"/>
+</svg>
