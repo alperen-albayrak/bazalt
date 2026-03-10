@@ -12,6 +12,7 @@ export interface ElectronAPI {
   listFiles(root: string): Promise<VaultFile[]>
   watchVault(root: string): void
   onVaultChanged(cb: () => void): () => void
+  createFolder(root: string, path: string): Promise<void>
   accounts: {
     load(): Promise<SavedAccount[]>
     save(accounts: SavedAccount[]): Promise<void>
@@ -56,5 +57,9 @@ export class ElectronAdapter implements PlatformAdapter {
   watchVault(onChange: () => void): () => void {
     this.api.watchVault(this.root)
     return this.api.onVaultChanged(onChange)
+  }
+
+  async createFolder(path: string): Promise<void> {
+    return this.api.createFolder(this.root, path)
   }
 }

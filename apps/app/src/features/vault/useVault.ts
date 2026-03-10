@@ -139,6 +139,15 @@ export function useVault() {
     [state, refreshVault],
   )
 
+  const createFolder = useCallback(
+    async (path: string): Promise<void> => {
+      if (state.status !== 'ready') return
+      if (state.adapter.createFolder) await state.adapter.createFolder(path)
+      await refreshVault()
+    },
+    [state, refreshVault],
+  )
+
   const closeVault = useCallback(() => {
     setState({ status: 'idle' })
   }, [])
@@ -154,6 +163,7 @@ export function useVault() {
     writeBinaryFile,
     readFileAsBlob,
     createNote,
+    createFolder,
     refreshVault,
   }
 }

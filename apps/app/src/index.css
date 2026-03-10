@@ -91,6 +91,30 @@
 .bz-markdown img { @apply rounded-lg max-w-full my-3 shadow-sm; }
 .bz-markdown audio, .bz-markdown video { @apply w-full my-3 rounded-lg; }
 
+/* Tab bar — hide scrollbar */
+.tab-scroll::-webkit-scrollbar { display: none; }
+.tab-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Checkerboard background for transparent image preview */
+.bg-checkerboard {
+  background-color: #f0f0f0;
+  background-image:
+    linear-gradient(45deg, #ccc 25%, transparent 25%),
+    linear-gradient(-45deg, #ccc 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #ccc 75%),
+    linear-gradient(-45deg, transparent 75%, #ccc 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+}
+.dark .bg-checkerboard {
+  background-color: #1f2937;
+  background-image:
+    linear-gradient(45deg, #374151 25%, transparent 25%),
+    linear-gradient(-45deg, #374151 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #374151 75%),
+    linear-gradient(-45deg, transparent 75%, #374151 75%);
+}
+
 /* Wikilinks in rendered view */
 .bz-wikilink-render {
   color: var(--bz-link-color);

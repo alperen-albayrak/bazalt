@@ -17,6 +17,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   readFileAsBuffer: (root: string, path: string) =>
     ipcRenderer.invoke('vault:readFileAsBuffer', root, path),
 
+  createFolder: (root: string, path: string) =>
+    ipcRenderer.invoke('vault:createFolder', root, path),
+
   watchVault: (root: string) => ipcRenderer.send('vault:watch', root),
 
   onVaultChanged: (cb: () => void) => {

@@ -1,16 +1,25 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { Editor, type EditorRef } from '@bazalt/editor'
-import { parseNote, type ParsedNote } from '@bazalt/core'
+import { parseNote, type ParsedNote, type FileVersion } from '@bazalt/core'
 import { MarkdownPreview } from './MarkdownPreview.js'
+import { PaneSplitter } from './PaneSplitter.js'
+import { VersionHistoryPanel } from './VersionHistoryPanel.js'
 
 interface NoteEditorProps {
   path: string
   content: string
+  initialViewMode?: ViewMode
+  onViewModeChange?: (path: string, mode: ViewMode) => void
   onSave: (path: string, content: string) => Promise<void>
+  onDraftChange?: (path: string, content: string) => void
   onWikiLinkClick: (target: string) => void
   writeBinaryFile?: (path: string, data: ArrayBuffer) => Promise<void>
   resolveAttachment?: (path: string) => Promise<string>
   refreshVault?: () => Promise<void>
+  listVersions?: (path: string) => Promise<FileVersion[]>
+  readVersion?: (path: string, id: number) => Promise<string>
+  restoreVersion?: (path: string, id: number) => Promise<void>
+  onAfterRestore?: (path: string, content: string) => void
 }
 
 type ViewMode = 'edit' | 'preview' | 'split'
@@ -38,33 +47,52 @@ function attachmentName(ext: string): string {
 export function NoteEditor({
   path,
   content,
+  initialViewMode,
+  onViewModeChange,
   onSave,
+  onDraftChange,
   onWikiLinkClick,
   writeBinaryFile,
   resolveAttachment,
   refreshVault,
+  listVersions,
+  readVersion,
+  restoreVersion,
+  onAfterRestore,
 }: NoteEditorProps) {
-  const [mode, setMode] = useState<ViewMode>('split')
+  const [mode, setMode] = useState<ViewMode>(initialViewMode ?? 'split')
   const [draft, setDraft] = useState(content)
   const [saved, setSaved] = useState(true)
   const [parsed, setParsed] = useState<ParsedNote>(() => parseNote(content))
   const [dragOver, setDragOver] = useState(false)
+  const [splitRatio, setSplitRatio] = useState(0.5)
+  const [showHistory, setShowHistory] = useState(false)
+  const [versionPreview, setVersionPreview] = useState<string | null>(null)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const editorRef = useRef<EditorRef>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
 
   // Reset when file changes
   useEffect(() => {
     setDraft(content)
     setSaved(true)
     setParsed(parseNote(content))
+    setVersionPreview(null)
+    setShowHistory(false)
   }, [path, content])
+
+  const changeMode = useCallback((m: ViewMode) => {
+    setMode(m)
+    onViewModeChange?.(path, m)
+  }, [path, onViewModeChange])
 
   const handleChange = useCallback(
     (value: string) => {
       setDraft(value)
       setSaved(false)
       setParsed(parseNote(value))
+      onDraftChange?.(path, value)
 
       // Auto-save after 800ms of inactivity
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
@@ -72,7 +100,7 @@ export function NoteEditor({
         onSave(path, value).then(() => setSaved(true))
       }, 800)
     },
-    [path, onSave],
+    [path, onSave, onDraftChange],
   )
 
   const handleManualSave = useCallback(async () => {
@@ -162,6 +190,20 @@ export function NoteEditor({
               Unsaved
             </span>
           )}
+          {listVersions && (
+            <button
+              onClick={() => { setShowHistory((v) => !v); setVersionPreview(null) }}
+              className={[
+                'px-2 py-1 text-xs rounded-md transition-colors',
+                showHistory
+                  ? 'bg-accent/10 text-accent'
+                  : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 hover:text-accent',
+              ].join(' ')}
+              title="Version history"
+            >
+              🕐
+            </button>
+          )}
           {writeBinaryFile && (
             <>
               <button
@@ -184,7 +226,7 @@ export function NoteEditor({
             {(['edit', 'split', 'preview'] as ViewMode[]).map((m) => (
               <button
                 key={m}
-                onClick={() => setMode(m)}
+                onClick={() => changeMode(m)}
                 className={[
                   'px-2 py-1 capitalize',
                   mode === m
@@ -200,34 +242,91 @@ export function NoteEditor({
       </div>
 
       {/* Content */}
-      <div
-        className={`flex flex-1 min-h-0 ${dragOver ? 'ring-2 ring-inset ring-accent ring-opacity-60' : ''}`}
-        onPaste={handlePaste}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-      >
-        {(mode === 'edit' || mode === 'split') && (
-          <div className={`${mode === 'split' ? 'w-1/2 border-r border-gray-200 dark:border-gray-700' : 'w-full'} min-h-0`}>
-            <Editor
-              ref={editorRef}
-              content={draft}
-              onChange={handleChange}
-              onWikiLinkClick={onWikiLinkClick}
-              className="h-full"
-            />
+      {versionPreview !== null ? (
+        <div className="flex flex-col flex-1 min-h-0">
+          <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-700 text-sm text-amber-700 dark:text-amber-400 shrink-0">
+            <span className="text-xs font-medium">Viewing historical version (read-only)</span>
+            <button
+              onClick={() => setVersionPreview(null)}
+              className="ml-auto text-xs underline hover:opacity-70"
+            >
+              Exit preview
+            </button>
           </div>
-        )}
-        {(mode === 'preview' || mode === 'split') && (
-          <div className={`${mode === 'split' ? 'w-1/2' : 'w-full'} overflow-y-auto p-6`}>
+          <div className="flex-1 overflow-y-auto p-6">
             <MarkdownPreview
-              body={parsed.body}
+              body={parseNote(versionPreview).body}
               onWikiLinkClick={onWikiLinkClick}
               resolveAttachment={resolveAttachment}
             />
           </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div
+          ref={contentRef}
+          className={`flex flex-1 min-h-0 relative ${dragOver ? 'ring-2 ring-inset ring-accent ring-opacity-60' : ''}`}
+          onPaste={handlePaste}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          {(mode === 'edit' || mode === 'split') && (
+            <div
+              className="min-h-0 min-w-0"
+              style={{ flex: mode === 'split' ? splitRatio : 1 }}
+            >
+              <Editor
+                ref={editorRef}
+                content={draft}
+                onChange={handleChange}
+                onWikiLinkClick={onWikiLinkClick}
+                className="h-full"
+              />
+            </div>
+          )}
+          {mode === 'split' && (
+            <PaneSplitter
+              onDelta={(dx) => {
+                const w = contentRef.current?.clientWidth ?? 800
+                setSplitRatio((r) => Math.min(0.85, Math.max(0.15, r + dx / w)))
+              }}
+            />
+          )}
+          {(mode === 'preview' || mode === 'split') && (
+            <div
+              className="min-h-0 min-w-0 overflow-y-auto p-6"
+              style={{ flex: mode === 'split' ? 1 - splitRatio : 1 }}
+            >
+              <MarkdownPreview
+                body={parsed.body}
+                onWikiLinkClick={onWikiLinkClick}
+                resolveAttachment={resolveAttachment}
+              />
+            </div>
+          )}
+
+          {/* Version history side panel */}
+          {showHistory && listVersions && readVersion && restoreVersion && (
+            <div className="absolute right-0 top-0 bottom-0 w-72 z-10 shadow-lg border-l border-gray-200 dark:border-gray-700 flex flex-col">
+              <VersionHistoryPanel
+                path={path}
+                listVersions={listVersions}
+                readVersion={readVersion}
+                restoreVersion={restoreVersion}
+                onClose={() => setShowHistory(false)}
+                onViewVersion={(c) => { setVersionPreview(c); setShowHistory(false) }}
+                onRestored={(c) => {
+                  setDraft(c)
+                  setParsed(parseNote(c))
+                  setSaved(true)
+                  setVersionPreview(null)
+                  onAfterRestore?.(path, c)
+                }}
+              />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

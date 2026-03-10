@@ -100,6 +100,11 @@ export function registerIpcHandlers() {
     return fs.readFile(abs)
   })
 
+  ipcMain.handle('vault:createFolder', async (_event, root: string, path: string) => {
+    const abs = nodePath.join(root, path)
+    await fs.mkdir(abs, { recursive: true })
+  })
+
   // ── Accounts persistence ──────────────────────────────────────────────────
 
   ipcMain.handle('accounts:load', async () => {

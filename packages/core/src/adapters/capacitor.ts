@@ -32,4 +32,8 @@ export class CapacitorAdapter implements PlatformAdapter {
   async readFileAsBlob(_path: string): Promise<string> {
     throw new Error('CapacitorAdapter not yet implemented — use ServerAdapter on mobile')
   }
+
+  async createFolder(_path: string): Promise<void> {
+    throw new Error('CapacitorAdapter not yet implemented — use ServerAdapter on mobile')
+  }
 }

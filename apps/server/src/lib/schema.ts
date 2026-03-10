@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, integer, boolean, timestamp, uniqueIndex, index } from 'drizzle-orm/pg-core'
+import { pgTable, pgEnum, serial, text, integer, boolean, timestamp, uniqueIndex, index } from 'drizzle-orm/pg-core'
 import { relations } from 'drizzle-orm'
 import { createId } from '@paralleldrive/cuid2'
 
@@ -42,6 +42,18 @@ export const vaultFiles = pgTable('vault_files', {
 }, (t) => [
   uniqueIndex('vault_files_vault_path_idx').on(t.vaultId, t.path),
   index('vault_files_vault_id_idx').on(t.vaultId),
+])
+
+export const vaultFileVersions = pgTable('vault_file_versions', {
+  id: serial('id').primaryKey(),
+  vaultId: text('vault_id').notNull().references(() => vaults.id, { onDelete: 'cascade' }),
+  path: text('path').notNull(),
+  hash: text('hash').notNull(),
+  size: integer('size').notNull(),
+  storageKey: text('storage_key').notNull().unique(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => [
+  index('vault_file_versions_vault_path_idx').on(t.vaultId, t.path, t.createdAt),
 ])
 
 // Relations (required for db.query.* with `with:`)

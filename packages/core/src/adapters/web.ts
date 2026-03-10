@@ -51,6 +51,14 @@ export class WebAdapter implements PlatformAdapter {
     const buffer = await file.arrayBuffer()
     return URL.createObjectURL(new Blob([buffer], { type: file.type }))
   }
+
+  async createFolder(path: string): Promise<void> {
+    const parts = path.split('/').filter(Boolean)
+    let dir: FileSystemDirectoryHandle = this.dirHandle
+    for (const segment of parts) {
+      dir = await dir.getDirectoryHandle(segment, { create: true })
+    }
+  }
 }
 
 async function scanDirectory(handle: FileSystemDirectoryHandle, prefix: string): Promise<VaultFile[]> {

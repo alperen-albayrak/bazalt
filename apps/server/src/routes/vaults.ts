@@ -1,8 +1,8 @@
 import type { FastifyInstance } from 'fastify'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, desc } from 'drizzle-orm'
 import { db } from '../lib/db.js'
-import { vaults, vaultMembers, vaultFiles } from '../lib/schema.js'
-import { putObject, getObject, getObjectBuffer, storageKey } from '../lib/storage.js'
+import { vaults, vaultMembers, vaultFiles, vaultFileVersions } from '../lib/schema.js'
+import { putObject, getObject, getObjectBuffer, deleteObject, storageKey } from '../lib/storage.js'
 import { createHash } from 'crypto'
 
 function mimeType(path: string): string {
@@ -103,6 +103,31 @@ export async function vaultRoutes(app: FastifyInstance) {
         set: { hash, size, storageKey: key, updatedAt: new Date() },
       })
       .returning()
+
+    // Record a version snapshot
+    const versionKey = `${request.params.vaultId}/${path}@${Date.now()}`
+    await putObject(versionKey, content)
+    await db.insert(vaultFileVersions).values({
+      vaultId: request.params.vaultId, path, hash, size, storageKey: versionKey,
+    })
+
+    // Keep at most 50 versions per file — delete oldest
+    const allVersions = await db
+      .select({ id: vaultFileVersions.id, storageKey: vaultFileVersions.storageKey })
+      .from(vaultFileVersions)
+      .where(and(
+        eq(vaultFileVersions.vaultId, request.params.vaultId),
+        eq(vaultFileVersions.path, path),
+      ))
+      .orderBy(desc(vaultFileVersions.createdAt))
+    if (allVersions.length > 50) {
+      const toDelete = allVersions.slice(50)
+      for (const v of toDelete) {
+        await deleteObject(v.storageKey).catch(() => {})
+        await db.delete(vaultFileVersions).where(eq(vaultFileVersions.id, v.id))
+      }
+    }
+
     return record
   })
 
@@ -133,6 +158,88 @@ export async function vaultRoutes(app: FastifyInstance) {
       })
       .returning()
     return record
+  })
+
+  /** List versions of a file */
+  app.get<{ Params: { vaultId: string }; Querystring: { path: string } }>(
+    '/api/vaults/:vaultId/file/versions',
+    async (request, reply) => {
+      await assertMember(request.userId, request.params.vaultId)
+      const versions = await db
+        .select({
+          id: vaultFileVersions.id,
+          hash: vaultFileVersions.hash,
+          size: vaultFileVersions.size,
+          createdAt: vaultFileVersions.createdAt,
+        })
+        .from(vaultFileVersions)
+        .where(and(
+          eq(vaultFileVersions.vaultId, request.params.vaultId),
+          eq(vaultFileVersions.path, request.query.path),
+        ))
+        .orderBy(desc(vaultFileVersions.createdAt))
+        .limit(50)
+      return versions
+    },
+  )
+
+  /** Get content of a specific version */
+  app.get<{ Params: { vaultId: string }; Querystring: { path: string; id: string } }>(
+    '/api/vaults/:vaultId/file/version',
+    async (request, reply) => {
+      await assertMember(request.userId, request.params.vaultId)
+      const version = await db.query.vaultFileVersions.findFirst({
+        where: and(
+          eq(vaultFileVersions.id, parseInt(request.query.id, 10)),
+          eq(vaultFileVersions.vaultId, request.params.vaultId),
+        ),
+      })
+      if (!version) return reply.status(404).send({ error: 'Version not found' })
+      const content = await getObject(version.storageKey)
+      reply.header('Content-Type', 'text/plain; charset=utf-8')
+      return content
+    },
+  )
+
+  /** Restore a file to a previous version */
+  app.post<{
+    Params: { vaultId: string }
+    Body: { path: string; versionId: number }
+  }>('/api/vaults/:vaultId/file/restore', async (request, reply) => {
+    const member = await assertMember(request.userId, request.params.vaultId)
+    if (member.role === 'VIEWER') return reply.status(403).send({ error: 'Read-only access' })
+
+    const { path, versionId } = request.body
+    const version = await db.query.vaultFileVersions.findFirst({
+      where: and(
+        eq(vaultFileVersions.id, versionId),
+        eq(vaultFileVersions.vaultId, request.params.vaultId),
+      ),
+    })
+    if (!version) return reply.status(404).send({ error: 'Version not found' })
+
+    const content = await getObject(version.storageKey)
+    const hash = createHash('sha256').update(content).digest('hex')
+    const size = Buffer.byteLength(content, 'utf8')
+    const key = storageKey(request.params.vaultId, path)
+
+    await putObject(key, content)
+    await db
+      .insert(vaultFiles)
+      .values({ vaultId: request.params.vaultId, path, hash, size, storageKey: key })
+      .onConflictDoUpdate({
+        target: [vaultFiles.vaultId, vaultFiles.path],
+        set: { hash, size, storageKey: key, updatedAt: new Date() },
+      })
+
+    // Record restore as a new version entry
+    const versionKey = `${request.params.vaultId}/${path}@${Date.now()}`
+    await putObject(versionKey, content)
+    await db.insert(vaultFileVersions).values({
+      vaultId: request.params.vaultId, path, hash, size, storageKey: versionKey,
+    })
+
+    return { ok: true }
   })
 
   /** Delete a file */
