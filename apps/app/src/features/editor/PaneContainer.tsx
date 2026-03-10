@@ -17,7 +17,7 @@ interface PaneContainerProps {
   onTabClose: (path: string) => void
   onTabDrop: (path: string, fromPaneId: string) => void
   onSplit: () => void
-  onSplitWith: (path: string) => void
+  onSplitWith: (path: string, direction: 'left' | 'right') => void
   onSave: (path: string, content: string) => Promise<void>
   onDraftChange: (path: string, content: string) => void
   onViewModeChange: (path: string, mode: ViewMode) => void
@@ -31,7 +31,7 @@ interface PaneContainerProps {
   onAfterRestore?: (path: string, content: string) => void
 }
 
-type DragZone = 'split' | 'open' | null
+type DragZone = 'split-left' | 'split-right' | 'open' | null
 
 export function PaneContainer({
   pane,
@@ -67,7 +67,10 @@ export function PaneContainer({
   const getZone = (e: React.DragEvent): DragZone => {
     const rect = bodyRef.current?.getBoundingClientRect()
     if (!rect) return 'open'
-    return (e.clientX - rect.left) < rect.width / 3 ? 'split' : 'open'
+    const x = e.clientX - rect.left
+    if (x < rect.width / 3) return 'split-left'
+    if (x > (rect.width * 2) / 3) return 'split-right'
+    return 'open'
   }
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -90,8 +93,10 @@ export function PaneContainer({
     try {
       const data = JSON.parse(e.dataTransfer.getData('text/plain'))
       if (data.source === 'filetree') {
-        if (zone === 'split') {
-          onSplitWith(data.path)
+        if (zone === 'split-left') {
+          onSplitWith(data.path, 'left')
+        } else if (zone === 'split-right') {
+          onSplitWith(data.path, 'right')
         } else {
           onTabSelect(data.path)
         }
@@ -158,14 +163,24 @@ export function PaneContainer({
         )}
 
         {/* Drag-over overlay */}
-        {dragZone === 'split' && (
+        {dragZone === 'split-left' && (
           <div className="absolute inset-0 pointer-events-none flex">
             <div className="w-1/3 bg-accent/20 border-2 border-accent/60 border-dashed flex items-center justify-center">
               <span className="text-accent text-xs font-medium bg-white/80 dark:bg-gray-900/80 px-2 py-1 rounded">
-                ⧉ Split here
+                ⧉ Split left
               </span>
             </div>
             <div className="flex-1 bg-black/5 dark:bg-white/5" />
+          </div>
+        )}
+        {dragZone === 'split-right' && (
+          <div className="absolute inset-0 pointer-events-none flex">
+            <div className="flex-1 bg-black/5 dark:bg-white/5" />
+            <div className="w-1/3 bg-accent/20 border-2 border-accent/60 border-dashed flex items-center justify-center">
+              <span className="text-accent text-xs font-medium bg-white/80 dark:bg-gray-900/80 px-2 py-1 rounded">
+                ⧉ Split right
+              </span>
+            </div>
           </div>
         )}
         {dragZone === 'open' && (

@@ -55,7 +55,12 @@ const iconBtnActive = 'w-8 h-8 flex items-center justify-center rounded-md text-
 
 export function App() {
   const { authState, logout } = useAuth()
-  const { state, openVault, openServerVault, openElectronVault, closeVault, readFile, writeFile, writeBinaryFile, readFileAsBlob, createNote, createFolder, refreshVault } = useVault()
+  const {
+    state, openVault, openServerVault, openElectronVault, closeVault,
+    readFile, writeFile, writeBinaryFile, readFileAsBlob,
+    createNote, createFolder, deleteFile, deleteFolder, renameFile, renameFolder, renameVault,
+    canRenameFolder, refreshVault,
+  } = useVault()
   const isElectron = !!window.electronAPI
   const isNative = Capacitor.isNativePlatform()
 
@@ -175,7 +180,7 @@ export function App() {
     })
   }, [panes])
 
-  const splitPaneWith = useCallback((paneId: string, path: string) => {
+  const splitPaneWith = useCallback((paneId: string, path: string, direction: 'left' | 'right' = 'left') => {
     const newId = Date.now().toString()
     const title = path.split('/').pop()?.replace(/\.md$/, '') ?? path
     const viewMode = noteViewModes.get(path, prefs.defaultViewMode)
@@ -188,7 +193,8 @@ export function App() {
     setPanes((prev) => {
       const idx = prev.findIndex((p) => p.id === paneId)
       const next = [...prev]
-      next.splice(idx, 0, newPane) // insert before current pane
+      const insertAt = direction === 'left' ? idx : idx + 1
+      next.splice(insertAt, 0, newPane)
       return next
     })
     setActivePaneId(newId)
@@ -315,6 +321,85 @@ export function App() {
     [state, createFolder],
   )
 
+  const handleDeleteFile = useCallback(async (path: string) => {
+    await deleteFile(path)
+    tabContents.current.delete(path)
+    setPanes((prev) => prev.flatMap((p) => {
+      const next = p.tabs.filter((t) => t.path !== path)
+      if (next.length === 0 && prev.length > 1) return []
+      return [{ ...p, tabs: next, activeTabPath: next[0]?.path ?? null }]
+    }))
+  }, [deleteFile])
+
+  const handleDeleteFolder = useCallback(async (folderPath: string) => {
+    await deleteFolder(folderPath)
+    setPanes((prev) => prev.flatMap((p) => {
+      const next = p.tabs.filter((t) => !t.path.startsWith(folderPath + '/'))
+      if (next.length === 0 && prev.length > 1) return []
+      return [{ ...p, tabs: next, activeTabPath: next[0]?.path ?? null }]
+    }))
+  }, [deleteFolder])
+
+  const handleRenameFile = useCallback(async (oldPath: string, newPath: string) => {
+    await renameFile(oldPath, newPath)
+    const content = tabContents.current.get(oldPath)
+    if (content !== undefined) {
+      tabContents.current.set(newPath, content)
+      tabContents.current.delete(oldPath)
+    }
+    setPanes((prev) => prev.map((p) => ({
+      ...p,
+      tabs: p.tabs.map((t) => t.path === oldPath
+        ? { ...t, path: newPath, title: newPath.split('/').pop()?.replace(/\.md$/, '') ?? newPath }
+        : t),
+      activeTabPath: p.activeTabPath === oldPath ? newPath : p.activeTabPath,
+    })))
+  }, [renameFile])
+
+  const handleRenameFolder = useCallback(async (oldPath: string, newPath: string) => {
+    await renameFolder(oldPath, newPath)
+    setPanes((prev) => prev.map((p) => ({
+      ...p,
+      tabs: p.tabs.map((t) => t.path.startsWith(oldPath + '/')
+        ? { ...t, path: newPath + t.path.slice(oldPath.length), title: (newPath + t.path.slice(oldPath.length)).split('/').pop()?.replace(/\.md$/, '') ?? t.title }
+        : t),
+      activeTabPath: p.activeTabPath?.startsWith(oldPath + '/')
+        ? newPath + p.activeTabPath.slice(oldPath.length)
+        : p.activeTabPath,
+    })))
+  }, [renameFolder])
+
+  const handleRenameVault = useCallback(async (newName: string) => {
+    await renameVault(newName)
+  }, [renameVault])
+
+  const handleDownloadZip = useCallback(async () => {
+    if (state.status !== 'ready') return
+    const { zipSync, strToU8 } = await import('fflate')
+    const files: Record<string, Uint8Array> = {}
+    for (const [path, file] of state.vault.files) {
+      try {
+        if (file.type === 'markdown' || file.type === 'excalidraw') {
+          const content = await readFile(path)
+          files[path] = strToU8(content)
+        } else {
+          const blobUrl = await readFileAsBlob(path)
+          const resp = await fetch(blobUrl)
+          const buf = await resp.arrayBuffer()
+          files[path] = new Uint8Array(buf)
+        }
+      } catch { /* skip */ }
+    }
+    const zipped = zipSync(files)
+    const blob = new Blob([zipped.buffer as ArrayBuffer], { type: 'application/zip' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${state.vault.name}.zip`
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [state, readFile, readFileAsBlob])
+
   const handleSplitterResize = useCallback((leftId: string, rightId: string, deltaX: number) => {
     const containerWidth = panesContainerRef.current?.clientWidth ?? 800
     setPanes((prev) => {
@@ -439,9 +524,16 @@ export function App() {
             <FileTree
               tree={vault.tree}
               selectedPath={selectedPath}
+              vaultName={vault.name}
               onSelect={handleSelectFile}
               onNewNote={handleNewNote}
               onNewFolder={handleNewFolder}
+              onDeleteFile={handleDeleteFile}
+              onDeleteFolder={handleDeleteFolder}
+              onRenameFile={handleRenameFile}
+              onRenameFolder={canRenameFolder ? handleRenameFolder : undefined}
+              onRenameVault={handleRenameVault}
+              onDownloadZip={handleDownloadZip}
             />
           </aside>
         )}
@@ -475,7 +567,7 @@ export function App() {
                     onTabClose={(path) => closeTab(pane.id, path)}
                     onTabDrop={(path, fromPaneId) => moveTab(fromPaneId, path, pane.id)}
                     onSplit={() => splitPane(pane.id)}
-                    onSplitWith={(path) => splitPaneWith(pane.id, path)}
+                    onSplitWith={(path, direction) => splitPaneWith(pane.id, path, direction)}
                     onSave={handleSave}
                     onDraftChange={handleDraftChange}
                     onViewModeChange={handleViewModeChange}

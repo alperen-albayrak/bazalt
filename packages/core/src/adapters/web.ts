@@ -59,6 +59,33 @@ export class WebAdapter implements PlatformAdapter {
       dir = await dir.getDirectoryHandle(segment, { create: true })
     }
   }
+
+  private async parentAndName(filePath: string): Promise<{ dir: FileSystemDirectoryHandle; name: string }> {
+    const parts = filePath.split('/')
+    const name = parts.pop()!
+    let dir: FileSystemDirectoryHandle = this.dirHandle
+    for (const part of parts) dir = await dir.getDirectoryHandle(part, { create: false })
+    return { dir, name }
+  }
+
+  async deleteFile(path: string): Promise<void> {
+    const { dir, name } = await this.parentAndName(path)
+    await dir.removeEntry(name)
+  }
+
+  async deleteFolder(path: string): Promise<void> {
+    const { dir, name } = await this.parentAndName(path)
+    await (dir as FileSystemDirectoryHandle & {
+      removeEntry(name: string, opts?: { recursive?: boolean }): Promise<void>
+    }).removeEntry(name, { recursive: true })
+  }
+
+  async renameFile(oldPath: string, newPath: string): Promise<void> {
+    const content = await this.readFile(oldPath)
+    await this.writeFile(newPath, content)
+    const { dir, name } = await this.parentAndName(oldPath)
+    await dir.removeEntry(name)
+  }
 }
 
 async function scanDirectory(handle: FileSystemDirectoryHandle, prefix: string): Promise<VaultFile[]> {

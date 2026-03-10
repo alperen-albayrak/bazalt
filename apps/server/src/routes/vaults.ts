@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { eq, and, desc } from 'drizzle-orm'
+import { eq, and, desc, like } from 'drizzle-orm'
 import { db } from '../lib/db.js'
 import { vaults, vaultMembers, vaultFiles, vaultFileVersions } from '../lib/schema.js'
 import { putObject, getObject, getObjectBuffer, deleteObject, storageKey } from '../lib/storage.js'
@@ -261,6 +261,114 @@ export async function vaultRoutes(app: FastifyInstance) {
       return { ok: true }
     },
   )
+
+  /** Delete a folder (all files under path/) */
+  app.delete<{ Params: { vaultId: string }; Querystring: { path: string } }>(
+    '/api/vaults/:vaultId/folder',
+    async (request, reply) => {
+      const member = await assertMember(request.userId, request.params.vaultId)
+      if (member.role === 'VIEWER') return reply.status(403).send({ error: 'Read-only access' })
+      const { path } = request.query
+      if (!path) return reply.status(400).send({ error: 'path required' })
+      await db.delete(vaultFiles).where(
+        and(
+          eq(vaultFiles.vaultId, request.params.vaultId),
+          like(vaultFiles.path, `${path}/%`),
+        ),
+      )
+      return { ok: true }
+    },
+  )
+
+  /** Rename a file */
+  app.post<{
+    Params: { vaultId: string }
+    Body: { oldPath: string; newPath: string }
+  }>('/api/vaults/:vaultId/file/rename', async (request, reply) => {
+    const member = await assertMember(request.userId, request.params.vaultId)
+    if (member.role === 'VIEWER') return reply.status(403).send({ error: 'Read-only access' })
+    const { oldPath, newPath } = request.body
+    if (!oldPath || !newPath) return reply.status(400).send({ error: 'oldPath and newPath required' })
+
+    const oldRecord = await db.query.vaultFiles.findFirst({
+      where: and(
+        eq(vaultFiles.vaultId, request.params.vaultId),
+        eq(vaultFiles.path, oldPath),
+      ),
+    })
+    if (!oldRecord) return reply.status(404).send({ error: 'File not found' })
+
+    const existing = await db.query.vaultFiles.findFirst({
+      where: and(
+        eq(vaultFiles.vaultId, request.params.vaultId),
+        eq(vaultFiles.path, newPath),
+      ),
+    })
+    if (existing) return reply.status(409).send({ error: 'File already exists at new path' })
+
+    const content = await getObject(oldRecord.storageKey)
+    const newKey = storageKey(request.params.vaultId, newPath)
+    await putObject(newKey, content)
+
+    await db.insert(vaultFiles)
+      .values({ vaultId: request.params.vaultId, path: newPath, hash: oldRecord.hash, size: oldRecord.size, storageKey: newKey })
+      .onConflictDoUpdate({
+        target: [vaultFiles.vaultId, vaultFiles.path],
+        set: { hash: oldRecord.hash, size: oldRecord.size, storageKey: newKey, updatedAt: new Date() },
+      })
+
+    await db.delete(vaultFiles).where(eq(vaultFiles.id, oldRecord.id))
+    return { ok: true }
+  })
+
+  /** Rename a folder (rename path prefix on all child files) */
+  app.post<{
+    Params: { vaultId: string }
+    Body: { oldPath: string; newPath: string }
+  }>('/api/vaults/:vaultId/folder/rename', async (request, reply) => {
+    const member = await assertMember(request.userId, request.params.vaultId)
+    if (member.role === 'VIEWER') return reply.status(403).send({ error: 'Read-only access' })
+    const { oldPath, newPath } = request.body
+    if (!oldPath || !newPath) return reply.status(400).send({ error: 'oldPath and newPath required' })
+
+    const files = await db.select().from(vaultFiles).where(
+      and(
+        eq(vaultFiles.vaultId, request.params.vaultId),
+        like(vaultFiles.path, `${oldPath}/%`),
+      ),
+    )
+
+    for (const file of files) {
+      const newFilePath = newPath + file.path.slice(oldPath.length)
+      const content = await getObject(file.storageKey)
+      const newKey = storageKey(request.params.vaultId, newFilePath)
+      await putObject(newKey, content)
+      await db.insert(vaultFiles)
+        .values({ vaultId: request.params.vaultId, path: newFilePath, hash: file.hash, size: file.size, storageKey: newKey })
+        .onConflictDoUpdate({
+          target: [vaultFiles.vaultId, vaultFiles.path],
+          set: { hash: file.hash, size: file.size, storageKey: newKey, updatedAt: new Date() },
+        })
+      await db.delete(vaultFiles).where(eq(vaultFiles.id, file.id))
+    }
+    return { ok: true }
+  })
+
+  /** Rename a vault */
+  app.patch<{
+    Params: { vaultId: string }
+    Body: { name: string }
+  }>('/api/vaults/:vaultId', async (request, reply) => {
+    const member = await assertMember(request.userId, request.params.vaultId)
+    if (member.role !== 'OWNER') return reply.status(403).send({ error: 'Only the owner can rename the vault' })
+    const { name } = request.body
+    if (!name) return reply.status(400).send({ error: 'name required' })
+    const [updated] = await db.update(vaults)
+      .set({ name, updatedAt: new Date() })
+      .where(eq(vaults.id, request.params.vaultId))
+      .returning()
+    return updated
+  })
 }
 
 async function assertMember(userId: string, vaultId: string) {

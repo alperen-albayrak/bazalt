@@ -15,6 +15,11 @@ export interface PlatformAdapter {
   listFiles(): Promise<VaultFile[]>
   watchVault?(onChange: () => void): () => void
   createFolder?(path: string): Promise<void>
+  deleteFile?(path: string): Promise<void>
+  deleteFolder?(path: string): Promise<void>
+  renameFile?(oldPath: string, newPath: string): Promise<void>
+  renameFolder?(oldPath: string, newPath: string): Promise<void>
+  renameVault?(name: string): Promise<void>
   listVersions?(path: string): Promise<FileVersion[]>
   readVersion?(path: string, id: number): Promise<string>
   restoreVersion?(path: string, id: number): Promise<void>

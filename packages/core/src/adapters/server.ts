@@ -65,6 +65,49 @@ export class ServerAdapter implements PlatformAdapter {
     await this.writeFile(`${path}/.gitkeep`, '')
   }
 
+  async deleteFile(path: string): Promise<void> {
+    const res = await fetch(
+      `${this.serverUrl}/api/vaults/${this.vaultId}/file?path=${encodeURIComponent(path)}`,
+      { method: 'DELETE', headers: this.headers },
+    )
+    if (!res.ok) throw new Error(`Failed to delete file (${res.status})`)
+  }
+
+  async deleteFolder(path: string): Promise<void> {
+    const res = await fetch(
+      `${this.serverUrl}/api/vaults/${this.vaultId}/folder?path=${encodeURIComponent(path)}`,
+      { method: 'DELETE', headers: this.headers },
+    )
+    if (!res.ok) throw new Error(`Failed to delete folder (${res.status})`)
+  }
+
+  async renameFile(oldPath: string, newPath: string): Promise<void> {
+    const res = await fetch(`${this.serverUrl}/api/vaults/${this.vaultId}/file/rename`, {
+      method: 'POST',
+      headers: { ...this.headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ oldPath, newPath }),
+    })
+    if (!res.ok) throw new Error(`Failed to rename file (${res.status})`)
+  }
+
+  async renameFolder(oldPath: string, newPath: string): Promise<void> {
+    const res = await fetch(`${this.serverUrl}/api/vaults/${this.vaultId}/folder/rename`, {
+      method: 'POST',
+      headers: { ...this.headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ oldPath, newPath }),
+    })
+    if (!res.ok) throw new Error(`Failed to rename folder (${res.status})`)
+  }
+
+  async renameVault(name: string): Promise<void> {
+    const res = await fetch(`${this.serverUrl}/api/vaults/${this.vaultId}`, {
+      method: 'PATCH',
+      headers: { ...this.headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })
+    if (!res.ok) throw new Error(`Failed to rename vault (${res.status})`)
+  }
+
   async listVersions(path: string): Promise<FileVersion[]> {
     const res = await fetch(
       `${this.serverUrl}/api/vaults/${this.vaultId}/file/versions?path=${encodeURIComponent(path)}`,
