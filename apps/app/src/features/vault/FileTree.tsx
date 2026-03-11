@@ -1,6 +1,135 @@
 import React, { useState, useEffect } from 'react'
 import type { VaultFile, VaultFolder } from '@bazalt/core'
 
+// ── Details helpers ───────────────────────────────────────────────────────────
+
+interface FolderStats {
+  fileCount: number
+  totalSize: number
+  newestMtime: number
+}
+
+function computeFolderStats(folder: VaultFolder): FolderStats {
+  let fileCount = 0
+  let totalSize = 0
+  let newestMtime = 0
+  function walk(f: VaultFolder) {
+    for (const child of f.children) {
+      if ('children' in child) {
+        walk(child)
+      } else {
+        fileCount++
+        totalSize += child.size
+        if (child.mtime > newestMtime) newestMtime = child.mtime
+      }
+    }
+  }
+  walk(folder)
+  return { fileCount, totalSize, newestMtime }
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
+}
+
+function formatDate(ms: number): string {
+  if (!ms) return '—'
+  return new Date(ms).toLocaleString(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  })
+}
+
+// ── Details modal ─────────────────────────────────────────────────────────────
+
+type DetailsTarget =
+  | { kind: 'file'; file: VaultFile }
+  | { kind: 'folder'; folder: VaultFolder }
+
+function DetailsModal({ target, onClose }: { target: DetailsTarget; onClose: () => void }) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [onClose])
+
+  const rows: { label: string; value: string }[] = []
+
+  if (target.kind === 'file') {
+    const { file } = target
+    const parentPath = file.path.includes('/') ? file.path.split('/').slice(0, -1).join('/') : '(root)'
+    rows.push(
+      { label: 'Name', value: file.name },
+      { label: 'Full path', value: file.path },
+      { label: 'Folder', value: parentPath },
+      { label: 'Extension', value: file.ext || '(none)' },
+      { label: 'Type', value: file.type },
+      { label: 'Size', value: formatBytes(file.size) },
+      { label: 'Modified', value: formatDate(file.mtime) },
+    )
+  } else {
+    const { folder } = target
+    const stats = computeFolderStats(folder)
+    const parentPath = folder.path.includes('/')
+      ? folder.path.split('/').slice(0, -1).join('/')
+      : folder.path ? '(root)' : '—'
+    rows.push(
+      { label: 'Name', value: folder.name },
+      { label: 'Full path', value: folder.path || '(root)' },
+      { label: 'Parent', value: parentPath },
+      { label: 'Files', value: stats.fileCount.toString() },
+      { label: 'Total size', value: formatBytes(stats.totalSize) },
+      { label: 'Last modified', value: formatDate(stats.newestMtime) },
+    )
+  }
+
+  const title = target.kind === 'file' ? 'File details' : 'Folder details'
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl w-[380px] max-w-[90vw] overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 dark:border-gray-800">
+          <span className="font-semibold text-sm text-gray-700 dark:text-gray-200">{title}</span>
+          <button
+            onClick={onClose}
+            className="w-6 h-6 flex items-center justify-center rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 text-xs leading-none transition-colors"
+          >
+            ✕
+          </button>
+        </div>
+        {/* Rows */}
+        <div className="px-5 py-4 flex flex-col gap-3">
+          {rows.map(({ label, value }) => (
+            <div key={label} className="flex items-start gap-3">
+              <span className="text-xs text-gray-400 dark:text-gray-500 w-24 shrink-0 pt-px">{label}</span>
+              <span className="text-xs text-gray-800 dark:text-gray-100 break-all flex-1 font-mono">{value}</span>
+            </div>
+          ))}
+        </div>
+        {/* Footer */}
+        <div className="px-5 pb-4 pt-1">
+          <button
+            onClick={onClose}
+            className="w-full py-1.5 text-xs rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── FileTree ──────────────────────────────────────────────────────────────────
+
 interface FileTreeProps {
   tree: VaultFolder
   selectedPath: string | null
@@ -34,6 +163,7 @@ export function FileTree({
   const [newName, setNewName] = useState('')
   const [vaultMenuOpen, setVaultMenuOpen] = useState(false)
   const [vaultRenaming, setVaultRenaming] = useState(false)
+  const [details, setDetails] = useState<DetailsTarget | null>(null)
 
   useEffect(() => {
     if (!vaultMenuOpen) return
@@ -157,11 +287,16 @@ export function FileTree({
           onDeleteFolder={onDeleteFolder}
           onRenameFile={onRenameFile}
           onRenameFolder={onRenameFolder}
+          onShowDetails={setDetails}
         />
       </div>
+
+      {details && <DetailsModal target={details} onClose={() => setDetails(null)} />}
     </div>
   )
 }
+
+// ── FolderNode ────────────────────────────────────────────────────────────────
 
 interface FolderNodeProps {
   folder: VaultFolder
@@ -174,6 +309,7 @@ interface FolderNodeProps {
   onDeleteFolder: (path: string) => void
   onRenameFile: (oldPath: string, newPath: string) => void
   onRenameFolder?: (oldPath: string, newPath: string) => void
+  onShowDetails: (target: DetailsTarget) => void
 }
 
 function FolderNode({
@@ -187,6 +323,7 @@ function FolderNode({
   onDeleteFolder,
   onRenameFile,
   onRenameFolder,
+  onShowDetails,
 }: FolderNodeProps) {
   const [open, setOpen] = useState(depth < 2)
   const [creating, setCreating] = useState<'note' | 'folder' | null>(null)
@@ -298,6 +435,12 @@ function FolderNode({
               className="absolute right-1 top-full mt-0.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded shadow-lg z-50 min-w-[120px] py-0.5"
               onMouseDown={(e) => e.stopPropagation()}
             >
+              <button
+                className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100 dark:hover:bg-gray-700"
+                onClick={() => { onShowDetails({ kind: 'folder', folder }); setMenuOpen(false) }}
+              >
+                ℹ Details
+              </button>
               {onRenameFolder && (
                 <button
                   className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100 dark:hover:bg-gray-700"
@@ -353,6 +496,7 @@ function FolderNode({
                 onDeleteFolder={onDeleteFolder}
                 onRenameFile={onRenameFile}
                 onRenameFolder={onRenameFolder}
+                onShowDetails={onShowDetails}
               />
             ) : (
               <FileNode
@@ -363,6 +507,7 @@ function FolderNode({
                 onSelect={onSelect}
                 onDeleteFile={onDeleteFile}
                 onRenameFile={onRenameFile}
+                onShowDetails={onShowDetails}
               />
             ),
           )}
@@ -372,6 +517,8 @@ function FolderNode({
   )
 }
 
+// ── FileNode ──────────────────────────────────────────────────────────────────
+
 interface FileNodeProps {
   file: VaultFile
   depth: number
@@ -379,9 +526,10 @@ interface FileNodeProps {
   onSelect: (file: VaultFile) => void
   onDeleteFile: (path: string) => void
   onRenameFile: (oldPath: string, newPath: string) => void
+  onShowDetails: (target: DetailsTarget) => void
 }
 
-function FileNode({ file, depth, selected, onSelect, onDeleteFile, onRenameFile }: FileNodeProps) {
+function FileNode({ file, depth, selected, onSelect, onDeleteFile, onRenameFile, onShowDetails }: FileNodeProps) {
   const [hovered, setHovered] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [renaming, setRenaming] = useState(false)
@@ -461,6 +609,12 @@ function FileNode({ file, depth, selected, onSelect, onDeleteFile, onRenameFile 
           className="absolute right-1 top-full mt-0.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded shadow-lg z-50 min-w-[120px] py-0.5"
           onMouseDown={(e) => e.stopPropagation()}
         >
+          <button
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100 dark:hover:bg-gray-700"
+            onClick={() => { onShowDetails({ kind: 'file', file }); setMenuOpen(false) }}
+          >
+            ℹ Details
+          </button>
           <button
             className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100 dark:hover:bg-gray-700"
             onClick={() => { setRenaming(true); setMenuOpen(false) }}
