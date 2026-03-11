@@ -100,6 +100,31 @@ export function registerIpcHandlers() {
     return fs.readFile(abs)
   })
 
+  ipcMain.handle('vault:createFolder', async (_event, root: string, path: string) => {
+    const abs = nodePath.join(root, path)
+    await fs.mkdir(abs, { recursive: true })
+  })
+
+  ipcMain.handle('vault:deleteFile', async (_event, root: string, path: string) => {
+    await fs.unlink(nodePath.join(root, path))
+  })
+
+  ipcMain.handle('vault:deleteFolder', async (_event, root: string, path: string) => {
+    await fs.rm(nodePath.join(root, path), { recursive: true, force: true })
+  })
+
+  ipcMain.handle('vault:renameFile', async (_event, root: string, oldPath: string, newPath: string) => {
+    const dest = nodePath.join(root, newPath)
+    await fs.mkdir(nodePath.dirname(dest), { recursive: true })
+    await fs.rename(nodePath.join(root, oldPath), dest)
+  })
+
+  ipcMain.handle('vault:renameFolder', async (_event, root: string, oldPath: string, newPath: string) => {
+    const dest = nodePath.join(root, newPath)
+    await fs.mkdir(nodePath.dirname(dest), { recursive: true })
+    await fs.rename(nodePath.join(root, oldPath), dest)
+  })
+
   // ── Accounts persistence ──────────────────────────────────────────────────
 
   ipcMain.handle('accounts:load', async () => {

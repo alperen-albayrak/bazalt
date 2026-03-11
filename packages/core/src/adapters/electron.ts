@@ -12,6 +12,11 @@ export interface ElectronAPI {
   listFiles(root: string): Promise<VaultFile[]>
   watchVault(root: string): void
   onVaultChanged(cb: () => void): () => void
+  createFolder(root: string, path: string): Promise<void>
+  deleteFile(root: string, path: string): Promise<void>
+  deleteFolder(root: string, path: string): Promise<void>
+  renameFile(root: string, oldPath: string, newPath: string): Promise<void>
+  renameFolder(root: string, oldPath: string, newPath: string): Promise<void>
   accounts: {
     load(): Promise<SavedAccount[]>
     save(accounts: SavedAccount[]): Promise<void>
@@ -56,5 +61,25 @@ export class ElectronAdapter implements PlatformAdapter {
   watchVault(onChange: () => void): () => void {
     this.api.watchVault(this.root)
     return this.api.onVaultChanged(onChange)
+  }
+
+  async createFolder(path: string): Promise<void> {
+    return this.api.createFolder(this.root, path)
+  }
+
+  async deleteFile(path: string): Promise<void> {
+    return this.api.deleteFile(this.root, path)
+  }
+
+  async deleteFolder(path: string): Promise<void> {
+    return this.api.deleteFolder(this.root, path)
+  }
+
+  async renameFile(oldPath: string, newPath: string): Promise<void> {
+    return this.api.renameFile(this.root, oldPath, newPath)
+  }
+
+  async renameFolder(oldPath: string, newPath: string): Promise<void> {
+    return this.api.renameFolder(this.root, oldPath, newPath)
   }
 }

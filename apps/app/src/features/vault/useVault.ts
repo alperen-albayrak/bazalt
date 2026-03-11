@@ -139,6 +139,69 @@ export function useVault() {
     [state, refreshVault],
   )
 
+  const createFolder = useCallback(
+    async (path: string): Promise<void> => {
+      if (state.status !== 'ready') return
+      if (state.adapter.createFolder) await state.adapter.createFolder(path)
+      await refreshVault()
+    },
+    [state, refreshVault],
+  )
+
+  const deleteFile = useCallback(
+    async (path: string): Promise<void> => {
+      if (state.status !== 'ready') throw new Error('No vault open')
+      if (!state.adapter.deleteFile) throw new Error('deleteFile not supported')
+      await state.adapter.deleteFile(path)
+      await refreshVault()
+    },
+    [state, refreshVault],
+  )
+
+  const deleteFolder = useCallback(
+    async (path: string): Promise<void> => {
+      if (state.status !== 'ready') throw new Error('No vault open')
+      if (!state.adapter.deleteFolder) throw new Error('deleteFolder not supported')
+      await state.adapter.deleteFolder(path)
+      await refreshVault()
+    },
+    [state, refreshVault],
+  )
+
+  const renameFile = useCallback(
+    async (oldPath: string, newPath: string): Promise<void> => {
+      if (state.status !== 'ready') throw new Error('No vault open')
+      if (!state.adapter.renameFile) throw new Error('renameFile not supported')
+      await state.adapter.renameFile(oldPath, newPath)
+      await refreshVault()
+    },
+    [state, refreshVault],
+  )
+
+  const renameFolder = useCallback(
+    async (oldPath: string, newPath: string): Promise<void> => {
+      if (state.status !== 'ready') throw new Error('No vault open')
+      if (!state.adapter.renameFolder) throw new Error('renameFolder not supported')
+      await state.adapter.renameFolder(oldPath, newPath)
+      await refreshVault()
+    },
+    [state, refreshVault],
+  )
+
+  const renameVault = useCallback(
+    async (newName: string): Promise<void> => {
+      if (state.status !== 'ready') return
+      await state.adapter.renameVault?.(newName)
+      setState((prev) => {
+        if (prev.status !== 'ready') return prev
+        return { ...prev, vault: { ...prev.vault, name: newName } }
+      })
+    },
+    [state],
+  )
+
+  const canRenameFolder = state.status === 'ready' ? !!state.adapter.renameFolder : false
+
   const closeVault = useCallback(() => {
     setState({ status: 'idle' })
   }, [])
@@ -154,6 +217,13 @@ export function useVault() {
     writeBinaryFile,
     readFileAsBlob,
     createNote,
+    createFolder,
+    deleteFile,
+    deleteFolder,
+    renameFile,
+    renameFolder,
+    renameVault,
+    canRenameFolder,
     refreshVault,
   }
 }

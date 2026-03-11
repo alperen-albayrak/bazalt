@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
+import { Capacitor } from '@capacitor/core'
+import { Preferences } from '@capacitor/preferences'
 import type { SavedAccount } from '@bazalt/core'
 
 const STORAGE_KEY = 'bazalt_accounts'
@@ -14,6 +16,7 @@ function loadFromLocalStorage(): SavedAccount[] {
 
 export function useAccounts() {
   const isElectron = !!window.electronAPI
+  const isNative = Capacitor.isNativePlatform()
   const [accounts, setAccounts] = useState<SavedAccount[]>([])
   const [loaded, setLoaded] = useState(false)
 
@@ -24,20 +27,31 @@ export function useAccounts() {
         setAccounts(clean(data))
         setLoaded(true)
       })
+    } else if (isNative) {
+      Preferences.get({ key: STORAGE_KEY }).then(({ value }) => {
+        try {
+          setAccounts(clean(value ? JSON.parse(value) : []))
+        } catch {
+          setAccounts([])
+        }
+        setLoaded(true)
+      })
     } else {
       setAccounts(clean(loadFromLocalStorage()))
       setLoaded(true)
     }
-  }, [isElectron])
+  }, [isElectron, isNative])
 
   const persist = useCallback((updated: SavedAccount[]) => {
     setAccounts(updated)
     if (isElectron) {
       window.electronAPI!.accounts.save(updated)
+    } else if (isNative) {
+      Preferences.set({ key: STORAGE_KEY, value: JSON.stringify(updated) })
     } else {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
     }
-  }, [isElectron])
+  }, [isElectron, isNative])
 
   const initiateLogin = useCallback(async (
     serverUrl: string,

@@ -1,4 +1,4 @@
-import type { PlatformAdapter } from '../platform.js'
+import type { PlatformAdapter, FileVersion } from '../platform.js'
 import { buildVaultFile, type VaultFile } from '../vault.js'
 
 export class ServerAdapter implements PlatformAdapter {
@@ -59,5 +59,79 @@ export class ServerAdapter implements PlatformAdapter {
     if (!res.ok) throw new Error(`File not found: ${path}`)
     const buffer = await res.arrayBuffer()
     return URL.createObjectURL(new Blob([buffer]))
+  }
+
+  async createFolder(path: string): Promise<void> {
+    await this.writeFile(`${path}/.gitkeep`, '')
+  }
+
+  async deleteFile(path: string): Promise<void> {
+    const res = await fetch(
+      `${this.serverUrl}/api/vaults/${this.vaultId}/file?path=${encodeURIComponent(path)}`,
+      { method: 'DELETE', headers: this.headers },
+    )
+    if (!res.ok) throw new Error(`Failed to delete file (${res.status})`)
+  }
+
+  async deleteFolder(path: string): Promise<void> {
+    const res = await fetch(
+      `${this.serverUrl}/api/vaults/${this.vaultId}/folder?path=${encodeURIComponent(path)}`,
+      { method: 'DELETE', headers: this.headers },
+    )
+    if (!res.ok) throw new Error(`Failed to delete folder (${res.status})`)
+  }
+
+  async renameFile(oldPath: string, newPath: string): Promise<void> {
+    const res = await fetch(`${this.serverUrl}/api/vaults/${this.vaultId}/file/rename`, {
+      method: 'POST',
+      headers: { ...this.headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ oldPath, newPath }),
+    })
+    if (!res.ok) throw new Error(`Failed to rename file (${res.status})`)
+  }
+
+  async renameFolder(oldPath: string, newPath: string): Promise<void> {
+    const res = await fetch(`${this.serverUrl}/api/vaults/${this.vaultId}/folder/rename`, {
+      method: 'POST',
+      headers: { ...this.headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ oldPath, newPath }),
+    })
+    if (!res.ok) throw new Error(`Failed to rename folder (${res.status})`)
+  }
+
+  async renameVault(name: string): Promise<void> {
+    const res = await fetch(`${this.serverUrl}/api/vaults/${this.vaultId}`, {
+      method: 'PATCH',
+      headers: { ...this.headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })
+    if (!res.ok) throw new Error(`Failed to rename vault (${res.status})`)
+  }
+
+  async listVersions(path: string): Promise<FileVersion[]> {
+    const res = await fetch(
+      `${this.serverUrl}/api/vaults/${this.vaultId}/file/versions?path=${encodeURIComponent(path)}`,
+      { headers: this.headers },
+    )
+    if (!res.ok) throw new Error(`Failed to load versions (${res.status})`)
+    return res.json()
+  }
+
+  async readVersion(path: string, id: number): Promise<string> {
+    const res = await fetch(
+      `${this.serverUrl}/api/vaults/${this.vaultId}/file/version?path=${encodeURIComponent(path)}&id=${id}`,
+      { headers: this.headers },
+    )
+    if (!res.ok) throw new Error(`Version not found`)
+    return res.text()
+  }
+
+  async restoreVersion(path: string, id: number): Promise<void> {
+    const res = await fetch(`${this.serverUrl}/api/vaults/${this.vaultId}/file/restore`, {
+      method: 'POST',
+      headers: { ...this.headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, versionId: id }),
+    })
+    if (!res.ok) throw new Error(`Failed to restore version (${res.status})`)
   }
 }

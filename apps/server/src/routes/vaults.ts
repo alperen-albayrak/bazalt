@@ -1,11 +1,25 @@
 import type { FastifyInstance } from 'fastify'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, desc, like } from 'drizzle-orm'
 import { db } from '../lib/db.js'
-import { vaults, vaultMembers, vaultFiles } from '../lib/schema.js'
-import { putObject, getObject, storageKey } from '../lib/storage.js'
+import { vaults, vaultMembers, vaultFiles, vaultFileVersions } from '../lib/schema.js'
+import { putObject, getObject, getObjectBuffer, deleteObject, storageKey } from '../lib/storage.js'
 import { createHash } from 'crypto'
 
+function mimeType(path: string): string {
+  const ext = path.split('.').pop()?.toLowerCase() ?? ''
+  const map: Record<string, string> = {
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+    gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
+    pdf: 'application/pdf', mp3: 'audio/mpeg', wav: 'audio/wav',
+    mp4: 'video/mp4', webm: 'video/webm',
+  }
+  return map[ext] ?? 'application/octet-stream'
+}
+
 export async function vaultRoutes(app: FastifyInstance) {
+  app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer' }, (_req, body, done) => {
+    done(null, body)
+  })
   /** List all vaults the current user is a member of */
   app.get('/api/vaults', async (request) => {
     const memberships = await db.query.vaultMembers.findMany({
@@ -53,6 +67,12 @@ export async function vaultRoutes(app: FastifyInstance) {
       })
       if (!record) return reply.status(404).send({ error: 'File not found' })
 
+      const isBinary = !record.path.endsWith('.md') && !record.path.endsWith('.txt')
+      if (isBinary) {
+        const buf = await getObjectBuffer(record.storageKey)
+        reply.header('Content-Type', mimeType(record.path))
+        return reply.send(buf)
+      }
       const content = await getObject(record.storageKey)
       reply.header('Content-Type', 'text/plain; charset=utf-8')
       return content
@@ -83,7 +103,143 @@ export async function vaultRoutes(app: FastifyInstance) {
         set: { hash, size, storageKey: key, updatedAt: new Date() },
       })
       .returning()
+
+    // Record a version snapshot
+    const versionKey = `${request.params.vaultId}/${path}@${Date.now()}`
+    await putObject(versionKey, content)
+    await db.insert(vaultFileVersions).values({
+      vaultId: request.params.vaultId, path, hash, size, storageKey: versionKey,
+    })
+
+    // Keep at most 50 versions per file — delete oldest
+    const allVersions = await db
+      .select({ id: vaultFileVersions.id, storageKey: vaultFileVersions.storageKey })
+      .from(vaultFileVersions)
+      .where(and(
+        eq(vaultFileVersions.vaultId, request.params.vaultId),
+        eq(vaultFileVersions.path, path),
+      ))
+      .orderBy(desc(vaultFileVersions.createdAt))
+    if (allVersions.length > 50) {
+      const toDelete = allVersions.slice(50)
+      for (const v of toDelete) {
+        await deleteObject(v.storageKey).catch(() => {})
+        await db.delete(vaultFileVersions).where(eq(vaultFileVersions.id, v.id))
+      }
+    }
+
     return record
+  })
+
+  /** Put a binary file (images, attachments) */
+  app.put<{
+    Params: { vaultId: string }
+    Querystring: { path: string }
+    Body: Buffer
+  }>('/api/vaults/:vaultId/file/binary', async (request, reply) => {
+    const member = await assertMember(request.userId, request.params.vaultId)
+    if (member.role === 'VIEWER') return reply.status(403).send({ error: 'Read-only access' })
+
+    const { path } = request.query
+    const body = request.body
+    if (!path || !body) return reply.status(400).send({ error: 'path and body required' })
+
+    const hash = createHash('sha256').update(body).digest('hex')
+    const size = body.byteLength
+    const key = storageKey(request.params.vaultId, path)
+
+    await putObject(key, body)
+    const [record] = await db
+      .insert(vaultFiles)
+      .values({ vaultId: request.params.vaultId, path, hash, size, storageKey: key })
+      .onConflictDoUpdate({
+        target: [vaultFiles.vaultId, vaultFiles.path],
+        set: { hash, size, storageKey: key, updatedAt: new Date() },
+      })
+      .returning()
+    return record
+  })
+
+  /** List versions of a file */
+  app.get<{ Params: { vaultId: string }; Querystring: { path: string } }>(
+    '/api/vaults/:vaultId/file/versions',
+    async (request, reply) => {
+      await assertMember(request.userId, request.params.vaultId)
+      const versions = await db
+        .select({
+          id: vaultFileVersions.id,
+          hash: vaultFileVersions.hash,
+          size: vaultFileVersions.size,
+          createdAt: vaultFileVersions.createdAt,
+        })
+        .from(vaultFileVersions)
+        .where(and(
+          eq(vaultFileVersions.vaultId, request.params.vaultId),
+          eq(vaultFileVersions.path, request.query.path),
+        ))
+        .orderBy(desc(vaultFileVersions.createdAt))
+        .limit(50)
+      return versions
+    },
+  )
+
+  /** Get content of a specific version */
+  app.get<{ Params: { vaultId: string }; Querystring: { path: string; id: string } }>(
+    '/api/vaults/:vaultId/file/version',
+    async (request, reply) => {
+      await assertMember(request.userId, request.params.vaultId)
+      const version = await db.query.vaultFileVersions.findFirst({
+        where: and(
+          eq(vaultFileVersions.id, parseInt(request.query.id, 10)),
+          eq(vaultFileVersions.vaultId, request.params.vaultId),
+        ),
+      })
+      if (!version) return reply.status(404).send({ error: 'Version not found' })
+      const content = await getObject(version.storageKey)
+      reply.header('Content-Type', 'text/plain; charset=utf-8')
+      return content
+    },
+  )
+
+  /** Restore a file to a previous version */
+  app.post<{
+    Params: { vaultId: string }
+    Body: { path: string; versionId: number }
+  }>('/api/vaults/:vaultId/file/restore', async (request, reply) => {
+    const member = await assertMember(request.userId, request.params.vaultId)
+    if (member.role === 'VIEWER') return reply.status(403).send({ error: 'Read-only access' })
+
+    const { path, versionId } = request.body
+    const version = await db.query.vaultFileVersions.findFirst({
+      where: and(
+        eq(vaultFileVersions.id, versionId),
+        eq(vaultFileVersions.vaultId, request.params.vaultId),
+      ),
+    })
+    if (!version) return reply.status(404).send({ error: 'Version not found' })
+
+    const content = await getObject(version.storageKey)
+    const hash = createHash('sha256').update(content).digest('hex')
+    const size = Buffer.byteLength(content, 'utf8')
+    const key = storageKey(request.params.vaultId, path)
+
+    await putObject(key, content)
+    await db
+      .insert(vaultFiles)
+      .values({ vaultId: request.params.vaultId, path, hash, size, storageKey: key })
+      .onConflictDoUpdate({
+        target: [vaultFiles.vaultId, vaultFiles.path],
+        set: { hash, size, storageKey: key, updatedAt: new Date() },
+      })
+
+    // Record restore as a new version entry
+    const versionKey = `${request.params.vaultId}/${path}@${Date.now()}`
+    await putObject(versionKey, content)
+    await db.insert(vaultFileVersions).values({
+      vaultId: request.params.vaultId, path, hash, size, storageKey: versionKey,
+    })
+
+    return { ok: true }
   })
 
   /** Delete a file */
@@ -105,6 +261,114 @@ export async function vaultRoutes(app: FastifyInstance) {
       return { ok: true }
     },
   )
+
+  /** Delete a folder (all files under path/) */
+  app.delete<{ Params: { vaultId: string }; Querystring: { path: string } }>(
+    '/api/vaults/:vaultId/folder',
+    async (request, reply) => {
+      const member = await assertMember(request.userId, request.params.vaultId)
+      if (member.role === 'VIEWER') return reply.status(403).send({ error: 'Read-only access' })
+      const { path } = request.query
+      if (!path) return reply.status(400).send({ error: 'path required' })
+      await db.delete(vaultFiles).where(
+        and(
+          eq(vaultFiles.vaultId, request.params.vaultId),
+          like(vaultFiles.path, `${path}/%`),
+        ),
+      )
+      return { ok: true }
+    },
+  )
+
+  /** Rename a file */
+  app.post<{
+    Params: { vaultId: string }
+    Body: { oldPath: string; newPath: string }
+  }>('/api/vaults/:vaultId/file/rename', async (request, reply) => {
+    const member = await assertMember(request.userId, request.params.vaultId)
+    if (member.role === 'VIEWER') return reply.status(403).send({ error: 'Read-only access' })
+    const { oldPath, newPath } = request.body
+    if (!oldPath || !newPath) return reply.status(400).send({ error: 'oldPath and newPath required' })
+
+    const oldRecord = await db.query.vaultFiles.findFirst({
+      where: and(
+        eq(vaultFiles.vaultId, request.params.vaultId),
+        eq(vaultFiles.path, oldPath),
+      ),
+    })
+    if (!oldRecord) return reply.status(404).send({ error: 'File not found' })
+
+    const existing = await db.query.vaultFiles.findFirst({
+      where: and(
+        eq(vaultFiles.vaultId, request.params.vaultId),
+        eq(vaultFiles.path, newPath),
+      ),
+    })
+    if (existing) return reply.status(409).send({ error: 'File already exists at new path' })
+
+    const content = await getObject(oldRecord.storageKey)
+    const newKey = storageKey(request.params.vaultId, newPath)
+    await putObject(newKey, content)
+
+    await db.insert(vaultFiles)
+      .values({ vaultId: request.params.vaultId, path: newPath, hash: oldRecord.hash, size: oldRecord.size, storageKey: newKey })
+      .onConflictDoUpdate({
+        target: [vaultFiles.vaultId, vaultFiles.path],
+        set: { hash: oldRecord.hash, size: oldRecord.size, storageKey: newKey, updatedAt: new Date() },
+      })
+
+    await db.delete(vaultFiles).where(eq(vaultFiles.id, oldRecord.id))
+    return { ok: true }
+  })
+
+  /** Rename a folder (rename path prefix on all child files) */
+  app.post<{
+    Params: { vaultId: string }
+    Body: { oldPath: string; newPath: string }
+  }>('/api/vaults/:vaultId/folder/rename', async (request, reply) => {
+    const member = await assertMember(request.userId, request.params.vaultId)
+    if (member.role === 'VIEWER') return reply.status(403).send({ error: 'Read-only access' })
+    const { oldPath, newPath } = request.body
+    if (!oldPath || !newPath) return reply.status(400).send({ error: 'oldPath and newPath required' })
+
+    const files = await db.select().from(vaultFiles).where(
+      and(
+        eq(vaultFiles.vaultId, request.params.vaultId),
+        like(vaultFiles.path, `${oldPath}/%`),
+      ),
+    )
+
+    for (const file of files) {
+      const newFilePath = newPath + file.path.slice(oldPath.length)
+      const content = await getObject(file.storageKey)
+      const newKey = storageKey(request.params.vaultId, newFilePath)
+      await putObject(newKey, content)
+      await db.insert(vaultFiles)
+        .values({ vaultId: request.params.vaultId, path: newFilePath, hash: file.hash, size: file.size, storageKey: newKey })
+        .onConflictDoUpdate({
+          target: [vaultFiles.vaultId, vaultFiles.path],
+          set: { hash: file.hash, size: file.size, storageKey: newKey, updatedAt: new Date() },
+        })
+      await db.delete(vaultFiles).where(eq(vaultFiles.id, file.id))
+    }
+    return { ok: true }
+  })
+
+  /** Rename a vault */
+  app.patch<{
+    Params: { vaultId: string }
+    Body: { name: string }
+  }>('/api/vaults/:vaultId', async (request, reply) => {
+    const member = await assertMember(request.userId, request.params.vaultId)
+    if (member.role !== 'OWNER') return reply.status(403).send({ error: 'Only the owner can rename the vault' })
+    const { name } = request.body
+    if (!name) return reply.status(400).send({ error: 'name required' })
+    const [updated] = await db.update(vaults)
+      .set({ name, updatedAt: new Date() })
+      .where(eq(vaults.id, request.params.vaultId))
+      .returning()
+    return updated
+  })
 }
 
 async function assertMember(userId: string, vaultId: string) {

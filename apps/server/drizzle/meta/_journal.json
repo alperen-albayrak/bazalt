@@ -15,6 +15,13 @@
       "when": 1741478400000,
       "tag": "0001_add_totp",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1741564800000,
+      "tag": "0002_note_versions",
+      "breakpoints": true
     }
   ]
 }

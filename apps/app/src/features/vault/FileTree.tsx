@@ -1,52 +1,274 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import type { VaultFile, VaultFolder } from '@bazalt/core'
+
+// ── Details helpers ───────────────────────────────────────────────────────────
+
+interface FolderStats {
+  fileCount: number
+  totalSize: number
+  newestMtime: number
+}
+
+function computeFolderStats(folder: VaultFolder): FolderStats {
+  let fileCount = 0
+  let totalSize = 0
+  let newestMtime = 0
+  function walk(f: VaultFolder) {
+    for (const child of f.children) {
+      if ('children' in child) {
+        walk(child)
+      } else {
+        fileCount++
+        totalSize += child.size
+        if (child.mtime > newestMtime) newestMtime = child.mtime
+      }
+    }
+  }
+  walk(folder)
+  return { fileCount, totalSize, newestMtime }
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
+}
+
+function formatDate(ms: number): string {
+  if (!ms) return '—'
+  return new Date(ms).toLocaleString(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  })
+}
+
+// ── Details modal ─────────────────────────────────────────────────────────────
+
+type DetailsTarget =
+  | { kind: 'file'; file: VaultFile }
+  | { kind: 'folder'; folder: VaultFolder }
+
+function DetailsModal({ target, onClose }: { target: DetailsTarget; onClose: () => void }) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [onClose])
+
+  const rows: { label: string; value: string }[] = []
+
+  if (target.kind === 'file') {
+    const { file } = target
+    const parentPath = file.path.includes('/') ? file.path.split('/').slice(0, -1).join('/') : '(root)'
+    rows.push(
+      { label: 'Name', value: file.name },
+      { label: 'Full path', value: file.path },
+      { label: 'Folder', value: parentPath },
+      { label: 'Extension', value: file.ext || '(none)' },
+      { label: 'Type', value: file.type },
+      { label: 'Size', value: formatBytes(file.size) },
+      { label: 'Modified', value: formatDate(file.mtime) },
+    )
+  } else {
+    const { folder } = target
+    const stats = computeFolderStats(folder)
+    const parentPath = folder.path.includes('/')
+      ? folder.path.split('/').slice(0, -1).join('/')
+      : folder.path ? '(root)' : '—'
+    rows.push(
+      { label: 'Name', value: folder.name },
+      { label: 'Full path', value: folder.path || '(root)' },
+      { label: 'Parent', value: parentPath },
+      { label: 'Files', value: stats.fileCount.toString() },
+      { label: 'Total size', value: formatBytes(stats.totalSize) },
+      { label: 'Last modified', value: formatDate(stats.newestMtime) },
+    )
+  }
+
+  const title = target.kind === 'file' ? 'File details' : 'Folder details'
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl w-[380px] max-w-[90vw] overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 dark:border-gray-800">
+          <span className="font-semibold text-sm text-gray-700 dark:text-gray-200">{title}</span>
+          <button
+            onClick={onClose}
+            className="w-6 h-6 flex items-center justify-center rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 text-xs leading-none transition-colors"
+          >
+            ✕
+          </button>
+        </div>
+        {/* Rows */}
+        <div className="px-5 py-4 flex flex-col gap-3">
+          {rows.map(({ label, value }) => (
+            <div key={label} className="flex items-start gap-3">
+              <span className="text-xs text-gray-400 dark:text-gray-500 w-24 shrink-0 pt-px">{label}</span>
+              <span className="text-xs text-gray-800 dark:text-gray-100 break-all flex-1 font-mono">{value}</span>
+            </div>
+          ))}
+        </div>
+        {/* Footer */}
+        <div className="px-5 pb-4 pt-1">
+          <button
+            onClick={onClose}
+            className="w-full py-1.5 text-xs rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── FileTree ──────────────────────────────────────────────────────────────────
 
 interface FileTreeProps {
   tree: VaultFolder
   selectedPath: string | null
+  vaultName: string
   onSelect: (file: VaultFile) => void
   onNewNote: (name: string) => void
+  onNewFolder: (path: string) => void
+  onDeleteFile: (path: string) => void
+  onDeleteFolder: (path: string) => void
+  onRenameFile: (oldPath: string, newPath: string) => void
+  onRenameFolder?: (oldPath: string, newPath: string) => void
+  onRenameVault: (newName: string) => void
+  onDownloadZip: () => void
 }
 
-export function FileTree({ tree, selectedPath, onSelect, onNewNote }: FileTreeProps) {
-  const [creating, setCreating] = useState(false)
+export function FileTree({
+  tree,
+  selectedPath,
+  vaultName,
+  onSelect,
+  onNewNote,
+  onNewFolder,
+  onDeleteFile,
+  onDeleteFolder,
+  onRenameFile,
+  onRenameFolder,
+  onRenameVault,
+  onDownloadZip,
+}: FileTreeProps) {
+  const [creating, setCreating] = useState<'note' | 'folder' | null>(null)
   const [newName, setNewName] = useState('')
+  const [vaultMenuOpen, setVaultMenuOpen] = useState(false)
+  const [vaultRenaming, setVaultRenaming] = useState(false)
+  const [details, setDetails] = useState<DetailsTarget | null>(null)
+
+  useEffect(() => {
+    if (!vaultMenuOpen) return
+    const handler = () => setVaultMenuOpen(false)
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [vaultMenuOpen])
 
   function submitNew() {
     const trimmed = newName.trim()
-    if (!trimmed) { setCreating(false); return }
-    const name = trimmed.endsWith('.md') ? trimmed : `${trimmed}.md`
-    onNewNote(name)
+    if (!trimmed) { setCreating(null); return }
+    if (creating === 'note') {
+      const name = trimmed.endsWith('.md') ? trimmed : `${trimmed}.md`
+      onNewNote(name)
+    } else if (creating === 'folder') {
+      onNewFolder(trimmed)
+    }
     setNewName('')
-    setCreating(false)
+    setCreating(null)
   }
 
   return (
     <div className="flex flex-col h-full text-sm">
       {/* Sidebar header */}
-      <div className="flex items-center justify-between px-2 py-1.5 border-b border-gray-200 dark:border-gray-700 shrink-0">
-        <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Notes</span>
-        <button
-          onClick={() => { setCreating(true); setNewName('') }}
-          className="text-gray-400 hover:text-accent transition-colors"
-          title="New note"
-        >
-          +
-        </button>
+      <div className="flex items-center justify-between px-2 py-1.5 border-b border-gray-200 dark:border-gray-700 shrink-0 gap-1">
+        {vaultRenaming ? (
+          <input
+            autoFocus
+            className="flex-1 text-xs font-semibold border border-accent rounded px-1 py-0.5 bg-white dark:bg-gray-900 outline-none uppercase tracking-wide"
+            defaultValue={vaultName}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                const v = (e.target as HTMLInputElement).value.trim()
+                if (v) onRenameVault(v)
+                setVaultRenaming(false)
+              }
+              if (e.key === 'Escape') setVaultRenaming(false)
+            }}
+            onBlur={(e) => {
+              const v = e.target.value.trim()
+              if (v) onRenameVault(v)
+              setVaultRenaming(false)
+            }}
+          />
+        ) : (
+          <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide truncate flex-1">
+            {vaultName}
+          </span>
+        )}
+        <div className="flex items-center gap-0.5 relative shrink-0">
+          <button
+            onClick={() => { setCreating('folder'); setNewName('') }}
+            className="w-5 h-5 flex items-center justify-center rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-accent text-xs leading-none transition-colors"
+            title="New folder"
+          >
+            📁
+          </button>
+          <button
+            onClick={() => { setCreating('note'); setNewName('') }}
+            className="w-5 h-5 flex items-center justify-center rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-accent font-bold leading-none transition-colors"
+            title="New note"
+          >
+            +
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setVaultMenuOpen(true) }}
+            className="w-5 h-5 flex items-center justify-center rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 text-xs leading-none transition-colors"
+            title="Vault options"
+          >
+            ⋮
+          </button>
+          {vaultMenuOpen && (
+            <div
+              className="absolute right-0 top-full mt-0.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded shadow-lg z-50 min-w-[140px] py-0.5"
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <button
+                className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100 dark:hover:bg-gray-700"
+                onClick={() => { setVaultRenaming(true); setVaultMenuOpen(false) }}
+              >
+                ✏ Rename vault
+              </button>
+              <button
+                className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100 dark:hover:bg-gray-700"
+                onClick={() => { onDownloadZip(); setVaultMenuOpen(false) }}
+              >
+                ↓ Download as zip
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Inline new-note input */}
+      {/* Inline new-note/folder input */}
       {creating && (
         <div className="px-2 py-1 border-b border-gray-200 dark:border-gray-700 shrink-0">
           <input
             autoFocus
-            className="w-full text-sm border border-accent rounded px-2 py-0.5 bg-white dark:bg-gray-900 outline-none"
-            placeholder="Note name…"
+            className="w-full text-sm border border-accent rounded-md px-2 py-0.5 bg-white dark:bg-gray-900 outline-none"
+            placeholder={creating === 'folder' ? 'Folder name…' : 'Note name…'}
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') submitNew()
-              if (e.key === 'Escape') { setCreating(false); setNewName('') }
+              if (e.key === 'Escape') { setCreating(null); setNewName('') }
             }}
             onBlur={submitNew}
           />
@@ -54,39 +276,213 @@ export function FileTree({ tree, selectedPath, onSelect, onNewNote }: FileTreePr
       )}
 
       <div className="overflow-y-auto flex-1">
-        <FolderNode folder={tree} depth={0} selectedPath={selectedPath} onSelect={onSelect} />
+        <FolderNode
+          folder={tree}
+          depth={0}
+          selectedPath={selectedPath}
+          onSelect={onSelect}
+          onNewNote={onNewNote}
+          onNewFolder={onNewFolder}
+          onDeleteFile={onDeleteFile}
+          onDeleteFolder={onDeleteFolder}
+          onRenameFile={onRenameFile}
+          onRenameFolder={onRenameFolder}
+          onShowDetails={setDetails}
+        />
       </div>
+
+      {details && <DetailsModal target={details} onClose={() => setDetails(null)} />}
     </div>
   )
 }
+
+// ── FolderNode ────────────────────────────────────────────────────────────────
 
 interface FolderNodeProps {
   folder: VaultFolder
   depth: number
   selectedPath: string | null
   onSelect: (file: VaultFile) => void
+  onNewNote: (name: string) => void
+  onNewFolder: (path: string) => void
+  onDeleteFile: (path: string) => void
+  onDeleteFolder: (path: string) => void
+  onRenameFile: (oldPath: string, newPath: string) => void
+  onRenameFolder?: (oldPath: string, newPath: string) => void
+  onShowDetails: (target: DetailsTarget) => void
 }
 
-function FolderNode({ folder, depth, selectedPath, onSelect }: FolderNodeProps) {
+function FolderNode({
+  folder,
+  depth,
+  selectedPath,
+  onSelect,
+  onNewNote,
+  onNewFolder,
+  onDeleteFile,
+  onDeleteFolder,
+  onRenameFile,
+  onRenameFolder,
+  onShowDetails,
+}: FolderNodeProps) {
   const [open, setOpen] = useState(depth < 2)
+  const [creating, setCreating] = useState<'note' | 'folder' | null>(null)
+  const [newName, setNewName] = useState('')
+  const [hovered, setHovered] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [renaming, setRenaming] = useState(false)
 
   const isRoot = depth === 0
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const handler = () => setMenuOpen(false)
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [menuOpen])
+
+  function submitNew() {
+    const trimmed = newName.trim()
+    if (!trimmed) { setCreating(null); return }
+    const prefix = folder.path ? `${folder.path}/` : ''
+    if (creating === 'note') {
+      const name = trimmed.endsWith('.md') ? trimmed : `${trimmed}.md`
+      onNewNote(`${prefix}${name}`)
+    } else if (creating === 'folder') {
+      onNewFolder(`${prefix}${trimmed}`)
+    }
+    setNewName('')
+    setCreating(null)
+  }
+
+  function submitRename(value: string) {
+    const v = value.trim()
+    if (v && onRenameFolder) {
+      const parentPath = folder.path.includes('/')
+        ? folder.path.split('/').slice(0, -1).join('/')
+        : ''
+      const newPath = parentPath ? `${parentPath}/${v}` : v
+      onRenameFolder(folder.path, newPath)
+    }
+    setRenaming(false)
+  }
+
+  const visibleChildren = folder.children.filter((child) => {
+    if (!('children' in child) && child.name === '.gitkeep') return false
+    return true
+  })
 
   return (
     <div>
       {!isRoot && (
-        <button
-          className="flex items-center gap-1 w-full text-left px-2 py-0.5 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400"
-          style={{ paddingLeft: `${depth * 12 + 8}px` }}
-          onClick={() => setOpen((v) => !v)}
+        <div
+          className="relative"
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
         >
-          <span className="text-xs">{open ? '▾' : '▸'}</span>
-          <span className="font-medium truncate">{folder.name}</span>
-        </button>
+          {renaming ? (
+            <div className="flex items-center py-1 pr-2" style={{ paddingLeft: `${depth * 12 + 8}px` }}>
+              <input
+                autoFocus
+                className="w-full text-sm border border-accent rounded-md px-2 py-0.5 bg-white dark:bg-gray-900 outline-none"
+                defaultValue={folder.name}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') submitRename((e.target as HTMLInputElement).value)
+                  if (e.key === 'Escape') setRenaming(false)
+                }}
+                onBlur={(e) => submitRename(e.target.value)}
+              />
+            </div>
+          ) : (
+            <button
+              className="flex items-center gap-1 w-full text-left px-2 py-[5px] hover:bg-gray-100 dark:hover:bg-gray-800/60 text-gray-700 dark:text-gray-300 transition-colors"
+              style={{ paddingLeft: `${depth * 12 + 8}px` }}
+              onClick={() => setOpen((v) => !v)}
+            >
+              <span className="text-xs text-gray-400">{open ? '▾' : '▸'}</span>
+              <span className={depth === 1 ? 'text-xs font-semibold uppercase tracking-wide truncate' : 'font-medium truncate'}>
+                {folder.name}
+              </span>
+            </button>
+          )}
+          {!renaming && hovered && (
+            <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+              <button
+                onClick={(e) => { e.stopPropagation(); setCreating('folder'); setNewName(''); setOpen(true) }}
+                className="w-4 h-4 flex items-center justify-center rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 text-xs leading-none"
+                title="New subfolder"
+              >
+                📁
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setCreating('note'); setNewName(''); setOpen(true) }}
+                className="w-4 h-4 flex items-center justify-center rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 font-bold text-xs leading-none"
+                title="New note here"
+              >
+                +
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setMenuOpen(true) }}
+                className="w-4 h-4 flex items-center justify-center rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 text-xs leading-none"
+                title="Folder options"
+              >
+                ⋮
+              </button>
+            </div>
+          )}
+          {!renaming && menuOpen && (
+            <div
+              className="absolute right-1 top-full mt-0.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded shadow-lg z-50 min-w-[120px] py-0.5"
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <button
+                className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100 dark:hover:bg-gray-700"
+                onClick={() => { onShowDetails({ kind: 'folder', folder }); setMenuOpen(false) }}
+              >
+                ℹ Details
+              </button>
+              {onRenameFolder && (
+                <button
+                  className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100 dark:hover:bg-gray-700"
+                  onClick={() => { setRenaming(true); setMenuOpen(false) }}
+                >
+                  ✏ Rename
+                </button>
+              )}
+              <button
+                className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100 dark:hover:bg-gray-700 text-red-500"
+                onClick={() => {
+                  setMenuOpen(false)
+                  if (window.confirm(`Delete folder "${folder.name}" and all its contents?`)) {
+                    onDeleteFolder(folder.path)
+                  }
+                }}
+              >
+                🗑 Delete
+              </button>
+            </div>
+          )}
+        </div>
       )}
       {(isRoot || open) && (
         <div>
-          {folder.children.map((child) =>
+          {creating && (
+            <div className="py-1" style={{ paddingLeft: `${(depth + 1) * 12 + 8}px`, paddingRight: '8px' }}>
+              <input
+                autoFocus
+                className="w-full text-sm border border-accent rounded-md px-2 py-0.5 bg-white dark:bg-gray-900 outline-none"
+                placeholder={creating === 'folder' ? 'Folder name…' : 'Note name…'}
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') submitNew()
+                  if (e.key === 'Escape') { setCreating(null); setNewName('') }
+                }}
+                onBlur={submitNew}
+              />
+            </div>
+          )}
+          {visibleChildren.map((child) =>
             'children' in child ? (
               <FolderNode
                 key={child.path}
@@ -94,6 +490,13 @@ function FolderNode({ folder, depth, selectedPath, onSelect }: FolderNodeProps) 
                 depth={depth + 1}
                 selectedPath={selectedPath}
                 onSelect={onSelect}
+                onNewNote={onNewNote}
+                onNewFolder={onNewFolder}
+                onDeleteFile={onDeleteFile}
+                onDeleteFolder={onDeleteFolder}
+                onRenameFile={onRenameFile}
+                onRenameFolder={onRenameFolder}
+                onShowDetails={onShowDetails}
               />
             ) : (
               <FileNode
@@ -102,6 +505,9 @@ function FolderNode({ folder, depth, selectedPath, onSelect }: FolderNodeProps) 
                 depth={depth + 1}
                 selected={selectedPath === child.path}
                 onSelect={onSelect}
+                onDeleteFile={onDeleteFile}
+                onRenameFile={onRenameFile}
+                onShowDetails={onShowDetails}
               />
             ),
           )}
@@ -111,38 +517,125 @@ function FolderNode({ folder, depth, selectedPath, onSelect }: FolderNodeProps) 
   )
 }
 
+// ── FileNode ──────────────────────────────────────────────────────────────────
+
 interface FileNodeProps {
   file: VaultFile
   depth: number
   selected: boolean
   onSelect: (file: VaultFile) => void
+  onDeleteFile: (path: string) => void
+  onRenameFile: (oldPath: string, newPath: string) => void
+  onShowDetails: (target: DetailsTarget) => void
 }
 
-function FileNode({ file, depth, selected, onSelect }: FileNodeProps) {
-  const icon = fileIcon(file)
-  return (
-    <button
-      className={[
-        'flex items-center gap-1.5 w-full text-left py-0.5 text-gray-800 dark:text-gray-200 truncate',
-        'hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors',
-        selected ? 'bg-accent/10 text-accent font-medium' : '',
-      ].join(' ')}
-      style={{ paddingLeft: `${depth * 12 + 8}px` }}
-      onClick={() => onSelect(file)}
-    >
-      <span className="shrink-0">{icon}</span>
-      <span className="truncate">{displayName(file)}</span>
-    </button>
-  )
-}
+function FileNode({ file, depth, selected, onSelect, onDeleteFile, onRenameFile, onShowDetails }: FileNodeProps) {
+  const [hovered, setHovered] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [renaming, setRenaming] = useState(false)
 
-function fileIcon(file: VaultFile): string {
-  switch (file.type) {
-    case 'excalidraw': return '✏️'
-    case 'canvas': return '🗂️'
-    case 'markdown': return '📄'
-    default: return '📎'
+  useEffect(() => {
+    if (!menuOpen) return
+    const handler = () => setMenuOpen(false)
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [menuOpen])
+
+  const parentPath = file.path.includes('/')
+    ? file.path.split('/').slice(0, -1).join('/')
+    : ''
+
+  function submitRename(value: string) {
+    const v = value.trim()
+    if (v) {
+      const newName = file.type === 'markdown' && !v.endsWith('.md') ? `${v}.md` : v
+      const newPath = parentPath ? `${parentPath}/${newName}` : newName
+      onRenameFile(file.path, newPath)
+    }
+    setRenaming(false)
   }
+
+  if (renaming) {
+    return (
+      <div className="relative px-2 py-1 pr-2" style={{ paddingLeft: `${depth * 12 + 6}px` }}>
+        <input
+          autoFocus
+          className="w-full text-sm border border-accent rounded-md px-2 py-0.5 bg-white dark:bg-gray-900 outline-none"
+          defaultValue={displayName(file)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') submitRename((e.target as HTMLInputElement).value)
+            if (e.key === 'Escape') setRenaming(false)
+          }}
+          onBlur={(e) => submitRename(e.target.value)}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className="relative"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <button
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData('text/plain', JSON.stringify({ source: 'filetree', path: file.path }))
+          e.dataTransfer.effectAllowed = 'copy'
+        }}
+        className={[
+          'flex items-center w-full text-left py-[5px] pr-6 text-gray-800 dark:text-gray-200 truncate transition-colors',
+          selected
+            ? 'bg-accent/10 dark:bg-accent/15 text-accent font-medium border-l-2 border-accent'
+            : 'hover:bg-gray-100 dark:hover:bg-gray-800/60 border-l-2 border-transparent',
+        ].join(' ')}
+        style={{ paddingLeft: `${depth * 12 + 6}px` }}
+        onClick={() => onSelect(file)}
+      >
+        <span className="truncate">{displayName(file)}</span>
+      </button>
+      {hovered && (
+        <button
+          className="absolute right-1 top-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 text-xs leading-none"
+          onClick={(e) => { e.stopPropagation(); setMenuOpen(true) }}
+          title="File options"
+        >
+          ⋮
+        </button>
+      )}
+      {menuOpen && (
+        <div
+          className="absolute right-1 top-full mt-0.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded shadow-lg z-50 min-w-[120px] py-0.5"
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <button
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100 dark:hover:bg-gray-700"
+            onClick={() => { onShowDetails({ kind: 'file', file }); setMenuOpen(false) }}
+          >
+            ℹ Details
+          </button>
+          <button
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100 dark:hover:bg-gray-700"
+            onClick={() => { setRenaming(true); setMenuOpen(false) }}
+          >
+            ✏ Rename
+          </button>
+          <button
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100 dark:hover:bg-gray-700 text-red-500"
+            onClick={() => {
+              setMenuOpen(false)
+              if (window.confirm(`Delete "${displayName(file)}"?`)) {
+                onDeleteFile(file.path)
+              }
+            }}
+          >
+            🗑 Delete
+          </button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function displayName(file: VaultFile): string {

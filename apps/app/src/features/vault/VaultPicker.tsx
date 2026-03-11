@@ -20,7 +20,7 @@ interface VaultPickerProps {
 const inputCls =
   'flex-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 outline-none focus:border-accent min-w-0'
 const btnPrimary =
-  'px-4 py-2 bg-accent hover:bg-accent-hover text-white font-medium rounded-lg transition-colors disabled:opacity-50 text-sm shrink-0'
+  'px-4 py-2 bg-accent hover:bg-accent-hover text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm shrink-0'
 
 const ROLE_BADGE: Record<string, string> = {
   OWNER: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
@@ -180,11 +180,11 @@ export function VaultPicker({ onOpenVault, onOpenServerVault, onSaveSettings, au
   }
 
   return (
-    <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-950">
+    <div className="flex flex-col h-full bg-gradient-to-br from-slate-50 via-white to-indigo-50/20 dark:from-gray-950 dark:via-gray-950 dark:to-gray-900">
       {/* Header */}
-      <header className="flex items-center justify-between px-6 py-3 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 shrink-0">
+      <header className="flex items-center justify-between px-6 py-3 bg-white/80 dark:bg-gray-900/80 border-b border-gray-200 dark:border-gray-700 shrink-0 backdrop-blur-sm">
         <div className="flex items-center gap-2">
-          <span className="text-xl">🪨</span>
+          <img src="/icon.svg" className="w-8 h-8" alt="Bazalt" />
           <span className="font-bold text-gray-900 dark:text-white">Bazalt</span>
         </div>
         <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
@@ -210,7 +210,9 @@ export function VaultPicker({ onOpenVault, onOpenServerVault, onSaveSettings, au
 
           {/* Your vaults */}
           <section>
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Your vaults</h2>
+            <h2 className="text-base font-semibold text-gray-900 dark:text-white pb-3 border-b border-gray-100 dark:border-gray-800 mb-4">
+              Your vaults
+            </h2>
             {loadingVaults && (
               <p className="text-sm text-gray-400">Loading…</p>
             )}
@@ -225,7 +227,7 @@ export function VaultPicker({ onOpenVault, onOpenServerVault, onSaveSettings, au
                 {vaults.map((vault) => (
                   <li
                     key={vault.id}
-                    className="flex items-center justify-between gap-3 bg-white dark:bg-gray-900 rounded-xl px-4 py-3 border border-gray-200 dark:border-gray-700 shadow-sm"
+                    className="flex items-center justify-between gap-3 bg-white dark:bg-gray-900 rounded-xl px-4 py-3 border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow transition-shadow cursor-pointer"
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="font-medium text-gray-900 dark:text-white truncate">{vault.name}</span>
@@ -248,8 +250,10 @@ export function VaultPicker({ onOpenVault, onOpenServerVault, onSaveSettings, au
 
           {/* Create new vault */}
           <section>
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Create new vault</h2>
-            <form onSubmit={handleCreateVault} className="flex gap-2">
+            <h2 className="text-base font-semibold text-gray-900 dark:text-white pb-3 border-b border-gray-100 dark:border-gray-800 mb-4">
+              Create new vault
+            </h2>
+            <form onSubmit={handleCreateVault} className="flex gap-3">
               <input
                 className={inputCls}
                 type="text"
@@ -266,31 +270,35 @@ export function VaultPicker({ onOpenVault, onOpenServerVault, onSaveSettings, au
           </section>
 
           {/* Upload existing folder */}
-          <section className="border-t border-gray-200 dark:border-gray-700 pt-6">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Upload existing folder</h2>
-            <button
-              onClick={handleUploadFolder}
-              disabled={uploadProgress !== null || creating || openingVaultId !== null}
-              className={btnPrimary}
-            >
-              {uploadProgress
-                ? `Uploading ${uploadProgress.current} / ${uploadProgress.total} files…`
-                : 'Upload folder as new vault'}
-            </button>
-            <p className="mt-1 text-xs text-gray-400">Uploads all markdown and text files to the server.</p>
-            {uploadError && <p className="mt-2 text-xs text-red-500">{uploadError}</p>}
-            {uploadProgress && (
-              <div className="mt-2 h-1.5 w-full bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-accent transition-all"
-                  style={{
-                    width: uploadProgress.total > 0
-                      ? `${Math.round((uploadProgress.current / uploadProgress.total) * 100)}%`
-                      : '0%',
-                  }}
-                />
-              </div>
-            )}
+          <section>
+            <h2 className="text-base font-semibold text-gray-900 dark:text-white pb-3 border-b border-gray-100 dark:border-gray-800 mb-4">
+              Upload existing folder
+            </h2>
+            <div className="rounded-xl border border-dashed border-gray-200 dark:border-gray-700 p-5 bg-white/60 dark:bg-gray-900/40">
+              <button
+                onClick={handleUploadFolder}
+                disabled={uploadProgress !== null || creating || openingVaultId !== null}
+                className={btnPrimary}
+              >
+                {uploadProgress
+                  ? `Uploading ${uploadProgress.current} / ${uploadProgress.total} files…`
+                  : 'Upload folder as new vault'}
+              </button>
+              <p className="mt-2 text-xs text-gray-400">Uploads all markdown and text files to the server.</p>
+              {uploadError && <p className="mt-2 text-xs text-red-500">{uploadError}</p>}
+              {uploadProgress && (
+                <div className="mt-3 h-1.5 w-full bg-gray-200 dark:bg-gray-700/60 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-accent transition-all"
+                    style={{
+                      width: uploadProgress.total > 0
+                        ? `${Math.round((uploadProgress.current / uploadProgress.total) * 100)}%`
+                        : '0%',
+                    }}
+                  />
+                </div>
+              )}
+            </div>
           </section>
 
           {/* Open local folder */}
@@ -298,7 +306,7 @@ export function VaultPicker({ onOpenVault, onOpenServerVault, onSaveSettings, au
             <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Local only</h2>
             <button
               onClick={onOpenVault}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-700 dark:text-gray-300 hover:bg-white dark:hover:bg-gray-800 transition-colors"
+              className="px-4 py-2 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-700 dark:text-gray-300 hover:bg-white dark:hover:bg-gray-800 transition-colors"
             >
               Open local folder (no sync)
             </button>

@@ -17,6 +17,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
   readFileAsBuffer: (root: string, path: string) =>
     ipcRenderer.invoke('vault:readFileAsBuffer', root, path),
 
+  createFolder: (root: string, path: string) =>
+    ipcRenderer.invoke('vault:createFolder', root, path),
+
+  deleteFile: (root: string, path: string) =>
+    ipcRenderer.invoke('vault:deleteFile', root, path),
+
+  deleteFolder: (root: string, path: string) =>
+    ipcRenderer.invoke('vault:deleteFolder', root, path),
+
+  renameFile: (root: string, oldPath: string, newPath: string) =>
+    ipcRenderer.invoke('vault:renameFile', root, oldPath, newPath),
+
+  renameFolder: (root: string, oldPath: string, newPath: string) =>
+    ipcRenderer.invoke('vault:renameFolder', root, oldPath, newPath),
+
   watchVault: (root: string) => ipcRenderer.send('vault:watch', root),
 
   onVaultChanged: (cb: () => void) => {

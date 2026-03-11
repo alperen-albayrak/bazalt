@@ -40,6 +40,11 @@ export async function getObject(key: string): Promise<string> {
   return res.Body!.transformToString()
 }
 
+export async function getObjectBuffer(key: string): Promise<Buffer> {
+  const res = await s3.send(new GetObjectCommand({ Bucket: env.S3_BUCKET, Key: key }))
+  return Buffer.from(await res.Body!.transformToByteArray())
+}
+
 export async function deleteObject(key: string): Promise<void> {
   await s3.send(new DeleteObjectCommand({ Bucket: env.S3_BUCKET, Key: key }))
 }
